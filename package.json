@@ -1,0 +1,19 @@
+{
+  "name": "hydra-asteria",
+  "version": "1.0.0",
+  "description": "a cardano bot challenge game with L2 hydra",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MeshJS/asteria.git"
+  },
+  "author": "temasar",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/MeshJS/asteria/issues"
+  },
+  "homepage": "https://github.com/MeshJS/asteria#readme"
+}
