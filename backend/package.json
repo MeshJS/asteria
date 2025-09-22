@@ -1,0 +1,32 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "a websocket server for asteria",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsup",
+    "start": "tsc && node -r ../load-env.js dist/index.js",
+    "dev": "tsx -r ../load-env.js index.ts"
+  },
+  "author": "temasar",
+  "license": "ISC",
+  "dependencies": {
+    "@meshsdk/core": "^1.9.0-beta.54",
+    "@meshsdk/core-csl": "^1.9.0-beta.4",
+    "@meshsdk/core-cst": "^1.9.0-beta.4",
+    "@meshsdk/hydra": "^1.9.0-beta-39",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^22.14.1",
+    "@types/socket.io": "^3.0.1",
+    "assemblyscript": "^0.27.34",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  }
+}
