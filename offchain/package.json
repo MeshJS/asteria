@@ -1,0 +1,27 @@
+{
+  "name": "offchain",
+  "version": "1.0.0",
+  "description": "a websocket server for asteria",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "tsc && node -r ../load-env.js dist/index.js",
+    "dev": "tsx -r ../load-env.js index.ts"
+  },
+  "author": "temasar",
+  "license": "ISC",
+  "dependencies": {
+    "@meshsdk/core": "^1.9.0-beta.54",
+    "@meshsdk/core-csl": "^1.9.0-beta.4",
+    "@meshsdk/core-cst": "^1.9.0-beta.4",
+    "@meshsdk/hydra": "^1.9.0-beta.74"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.32",
+    "assemblyscript": "^0.27.34",
+    "ts-node": "^10.9.2",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3"
+  }
+}
