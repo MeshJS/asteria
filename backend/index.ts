@@ -1,12 +1,11 @@
 import { Server, Socket } from "socket.io";
 import { createServer } from "http";
 import express from "express";
-import { createShip } from "../offchain/src/user/create-ship.js";
-import { gatherFuel } from "../offchain/src/user/gather-fuel.js";
-import { mineAsteria } from "../offchain/src/user/mine-asteria.js";
-import { moveShip } from "../offchain/src/user/move-ship.js";
-import { quit as quitShip } from "../offchain/src/user/quit.js";
-import { writeFile, readFile } from "fs/promises";
+import { createShip } from "../offchain";
+import { gatherFuel } from "../offchain";
+import { mineAsteria } from "../offchain";
+import { moveShip } from "../offchain";
+import { quit } from "../offchain";
 import { readPelletsCsvFile } from "../offchain/src/admin/pellet/utils.js";
 import { HydraProvider } from "@meshsdk/hydra";
 
@@ -26,155 +25,71 @@ interface Pellet {
 interface GameState {
   ships: { [username: string]: Ship[] };
   pellets: Pellet[];
-  connectedClients: Set<string>;
-}
-
-interface ClientSession {
-  username?: string;
-  shipTxHash?: string;
-  lastActivity: number;
 }
 
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: "http://localhost:3000",
+    origin: process.env.FRONTEND_URL || "http://localhost:3000",
     methods: ["GET", "POST"],
   },
-  pingTimeout: 60000,
-  pingInterval: 25000,
+});
+
+const hydraProvider = new HydraProvider({
+  url: process.env.HYDRA_URL ?? "http://localhost:4001",
 });
 
 const gameState: GameState = {
   ships: {},
   pellets: [],
-  connectedClients: new Set(),
 };
 
-const clientSessions: Map<string, ClientSession> = new Map();
+const userShipTxHashes: Record<string, Record<number, string>> = {};
 
-// Load pellets once at startup
-let pelletFromCsv: any[];
-(async () => {
-  pelletFromCsv = await readPelletsCsvFile();
-  gameState.pellets = pelletFromCsv.map((pellet, index) => ({
-    id: index,
-    x: pellet.posX,
-    y: pellet.posY,
-    fuel: parseInt(pellet.fuel, 10),
-  }));
-  console.log("Pellets loaded:", gameState.pellets.length);
-})();
-
-// Helper function to handle errors consistently
-const handleError = (socket: Socket, error: any, context: string) => {
-  console.error(`Error in ${context}:`, error);
-  const message = error instanceof Error ? error.message : String(error);
-  socket.emit("error", { message: `${context}: ${message}` });
-};
-
-// Helper function to update client session
-const updateClientSession = (socketId: string, updates: Partial<ClientSession>) => {
-  const session = clientSessions.get(socketId) || { lastActivity: Date.now() };
-  clientSessions.set(socketId, { ...session, ...updates, lastActivity: Date.now() });
-};
-
-// Helper function to get client session
-const getClientSession = (socketId: string): ClientSession | undefined => {
-  return clientSessions.get(socketId);
-};
+const pelletFromCsv = await readPelletsCsvFile();
+gameState.pellets = pelletFromCsv.map((pellet, index) => ({
+  id: index,
+  x: pellet.posX,
+  y: pellet.posY,
+  fuel: parseInt(pellet.fuel, 10),
+}));
 
 io.on("connection", (socket: Socket) => {
-  console.log("New client connected:", socket.id);
+  socket.on("request-pellets", () => {
+    socket.emit("pellets-coordinates", {
+      pelletsCoordinates: gameState.pellets,
+    });
+  });
 
-  // Add client to connected clients
-  gameState.connectedClients.add(socket.id);
-  updateClientSession(socket.id, {});
-
-  // Emit pellets immediately on connection
-  socket.emit("pellets-coordinates", { pelletsCoordinates: gameState.pellets });
-
-  // Handle state recovery request
-  socket.on("request-state-recovery", (data: { username: string }) => {
-    try {
-      console.log(`State recovery requested for ${data.username}`);
-      
-      if (!data.username || typeof data.username !== "string") {
-        handleError(socket, new Error("Invalid username"), "request-state-recovery");
-        return;
-      }
-
-      const userShips = gameState.ships[data.username];
-      if (userShips && userShips.length > 0) {
-        console.log(`Restoring state for ${data.username}:`, userShips);
-        socket.emit("createship-coordinates", { coordinatesArray: userShips });
-        
-        updateClientSession(socket.id, { username: data.username });
-      } else {
-        console.log(`No persistent state found for ${data.username}`);
-        socket.emit("no-persistent-state", { username: data.username });
-      }
-    } catch (err) {
-      handleError(socket, err, "request-state-recovery");
-    }
+  socket.on("hydra-url", (data: { hydraUrl: string }) => {
+    socket.data.hydraUrl = data.hydraUrl;
   });
 
   socket.on(
     "initial-shipCoordinates",
     async (data: { shipProperty: { username: string; ships: Ship[] } }) => {
+      const { username, ships } = data.shipProperty;
+
+      if (!Array.isArray(ships)) {
+        socket.emit("error", { message: "Ship data is not an array" });
+        return;
+      }
+
       try {
-        console.log("Received initial-shipCoordinates:", data);
-        const { username, ships } = data.shipProperty;
-
-        if (!username || typeof username !== "string") {
-          handleError(socket, new Error("Invalid username"), "initial-shipCoordinates");
-          return;
+        userShipTxHashes[username] = userShipTxHashes[username] || {};
+        for (const ship of ships) {
+          const txHash = await createShip(ship.x, ship.y);
+          if (!txHash) {
+            throw new Error(`Failed to create ship at (${ship.x}, ${ship.y})`);
+          }
+          userShipTxHashes[username][ship.id] = txHash;
         }
-
-        if (!Array.isArray(ships) || ships.length !== 1) {
-          handleError(socket, new Error("Expected exactly one ship"), "initial-shipCoordinates");
-          return;
-        }
-
-        const ship = ships[0];
-        if (!ship || typeof ship.x !== "number" || typeof ship.y !== "number") {
-          handleError(socket, new Error("Invalid ship coordinates"), "initial-shipCoordinates");
-          return;
-        }
-
-        // Check if username already exists
-        if (gameState.ships[username]) {
-          handleError(socket, new Error("Username already in use"), "initial-shipCoordinates");
-          return;
-        }
-
-        // Call createShip function
-        let txHash: string | undefined;
-        try {
-          txHash = await createShip(ship.x, ship.y);
-        } catch (err) {
-          handleError(socket, err, "initial-shipCoordinates (createShip)");
-          return;
-        }
-        if (!txHash) {
-          handleError(socket, new Error(`Failed to create ship at (${ship.x}, ${ship.y})`), "initial-shipCoordinates");
-          return;
-        }
-
-        console.log("Ship txHash:", txHash);
-        await writeFile(
-          "./backend/user-hash/ships.json",
-          JSON.stringify({ txHash })
-        );
 
         gameState.ships[username] = ships;
-        updateClientSession(socket.id, { username, shipTxHash: txHash });
-
         io.emit("createship-coordinates", { coordinatesArray: ships });
-        console.log(`Ship created for ${username} at (${ship.x}, ${ship.y})`);
       } catch (err) {
-        handleError(socket, err, "initial-shipCoordinates");
+        socket.emit("error", { message: "Failed to initialize ships" });
       }
     }
   );
@@ -182,46 +97,43 @@ io.on("connection", (socket: Socket) => {
   socket.on(
     "ship-moved",
     async (data: { id: number; dx: number; dy: number }) => {
+      const { id, dx, dy } = data;
+
       try {
-        console.log("Received ship-moved:", data);
-        const { id, dx, dy } = data;
+        let username: string | undefined;
+        let ship: Ship | undefined;
+        let shipIndex: number = -1;
 
-        // Validate input
-        if (typeof id !== "number" || typeof dx !== "number" || typeof dy !== "number") {
-          handleError(socket, new Error("Invalid movement data"), "ship-moved");
+        // Find the ship and its owner
+        for (const user in gameState.ships) {
+          const userShips = gameState.ships[user];
+          shipIndex = userShips.findIndex((s) => s.id === id);
+          if (shipIndex !== -1) {
+            username = user;
+            ship = { ...userShips[shipIndex] };
+            break;
+          }
+        }
+
+        if (!username || !ship) {
+          socket.emit("error", { message: `Ship not found for ID ${id}` });
           return;
         }
 
-        // Get client session
-        const session = getClientSession(socket.id);
-        if (!session?.username || !session?.shipTxHash) {
-          handleError(socket, new Error("No active session found"), "ship-moved");
+        const shipTxHash = userShipTxHashes[username]?.[id];
+        if (!shipTxHash) {
+          socket.emit("error", {
+            message: `No transaction hash for ship ${id}`,
+          });
           return;
         }
 
-        const username = session.username;
-        const shipTxHash = session.shipTxHash;
-
-        // Find ship in game state
-        const userShips = gameState.ships[username];
-        if (!userShips) {
-          handleError(socket, new Error("No ships found for user"), "ship-moved");
-          return;
-        }
-
-        const shipIndex = userShips.findIndex((s) => s.id === id);
-        if (shipIndex === -1) {
-          handleError(socket, new Error(`Ship not found for ID ${id}`), "ship-moved");
-          return;
-        }
-
-        const ship = { ...userShips[shipIndex] };
+        // Calculate new position within grid bounds
         const newX = Math.max(-50, Math.min(50, ship.x + dx));
         const newY = Math.max(-50, Math.min(50, ship.y + dy));
 
         if (newX === ship.x && newY === ship.y) {
-          console.log("Ship movement blocked by boundary");
-          return;
+          return; // No movement needed
         }
 
         // Update ship position
@@ -229,127 +141,105 @@ io.on("connection", (socket: Socket) => {
         ship.y = newY;
         gameState.ships[username][shipIndex] = ship;
 
-        // Emit movement to all clients
+        // Move ship on blockchain
+        console.log(
+          `Moving ship ${id} for ${username}: dx=${dx}, dy=${dy}, txHash=${shipTxHash}`
+        );
+        const moveTxHash = await moveShip(dx, dy, shipTxHash);
+        if (!moveTxHash) {
+          socket.emit("error", { message: `Failed to move ship ${id}` });
+          return;
+        }
+        userShipTxHashes[username][id] = moveTxHash;
         io.emit("ship-moved", { ship });
 
-        // Call moveShip function
-        let moveTxHash: string | undefined;
-        try {
-          moveTxHash = await moveShip(dx, dy, shipTxHash);
-        } catch (err) {
-          handleError(socket, err, "ship-moved (moveShip)");
-          return;
-        }
-        if (!moveTxHash) {
-          handleError(socket, new Error(`Failed to move ship ${id}`), "ship-moved");
-          return;
-        }
-
-        await writeFile("./backend/user-hash/ships.json", JSON.stringify({ txHash: moveTxHash }));
-        updateClientSession(socket.id, { shipTxHash: moveTxHash });
-
-        // Pellet collision check
-        const pelletIndex = gameState.pellets.findIndex((p) => p.x === ship.x && p.y === ship.y);
+        // Check for pellet collection
+        const pelletIndex = gameState.pellets.findIndex(
+          (p) => p.x === ship.x && p.y === ship.y
+        );
         if (pelletIndex !== -1) {
           const collectedPellet = gameState.pellets.splice(pelletIndex, 1)[0];
-          let fuelTxHash: string | undefined;
-          try {
-            fuelTxHash = await gatherFuel(
-              moveTxHash,
-              " ",
-              collectedPellet.id,
-              collectedPellet.fuel - 10
-            );
-          } catch (err) {
-            handleError(socket, err, "ship-moved (gatherFuel)");
-            return;
-          }
+          const gatherAmount = collectedPellet.fuel - 30;
+          console.log(
+            `Collecting pellet ${collectedPellet.id}: fuel=${collectedPellet.fuel}`
+          );
+          const fuelTxHash = await gatherFuel(
+            moveTxHash,
+            "f38b3c7b510b3f13a2c035809b212061759e7c1ccbb1f4556d3b456044773a93",
+            collectedPellet.id,
+            gatherAmount
+          );
           if (fuelTxHash) {
+            userShipTxHashes[username][id] = fuelTxHash;
             io.emit("pellet-collected", { pelletId: collectedPellet.id });
-            await writeFile("./backend/user-hash/ships.json", JSON.stringify({ txHash: fuelTxHash }));
-            updateClientSession(socket.id, { shipTxHash: fuelTxHash });
-            console.log(`Pellet ${collectedPellet.id} collected by ${username}`);
+          } else {
+            socket.emit("error", {
+              message: `Failed to gather fuel for pellet ${collectedPellet.id}`,
+            });
           }
         }
 
-        // Asteria check
+        // Check for Asteria mining
         if (ship.x === 0 && ship.y === 0) {
-          let mineTxHash: string | undefined;
-          try {
-            mineTxHash = await mineAsteria(moveTxHash);
-          } catch (err) {
-            handleError(socket, err, "ship-moved (mineAsteria)");
-            return;
-          }
+          console.log(`Mining Asteria for ship ${id}`);
+          const mineTxHash = await mineAsteria(moveTxHash);
           if (mineTxHash) {
-            await writeFile("./backend/user-hash/ships.json", JSON.stringify({ txHash: mineTxHash }));
+            userShipTxHashes[username][id] = mineTxHash;
             io.emit("asteria-mined", { username });
             gameState.ships = {};
             gameState.pellets = [];
-            io.emit("game-cleared", { message: "Game reset due to Asteria mined" });
-            console.log(`${username} mined Asteria! Game reset.`);
+            io.emit("game-cleared", {
+              message: "Game reset due to Asteria mined",
+            });
+          } else {
+            socket.emit("error", { message: "Failed to mine Asteria" });
           }
         }
-
-        console.log(`Ship ${id} moved to (${ship.x}, ${ship.y}) by ${username}`);
       } catch (err) {
-        handleError(socket, err, "ship-moved");
+        console.error(`Error processing ship movement for ID ${id}:`, err);
+        socket.emit("error", {
+          message: `Failed to process ship movement: ${err.message}`,
+        });
       }
     }
   );
 
   socket.on("quit", async (data: { username: string }) => {
+    const { username } = data;
+
+    if (!gameState.ships[username] || !userShipTxHashes[username]) {
+      socket.emit("error", { message: "No active game for user" });
+      return;
+    }
+
     try {
-      console.log(`Quit from ${data.username}`);
-
-      if (!data.username || typeof data.username !== "string") {
-        handleError(socket, new Error("Invalid username"), "quit");
-        return;
+      for (const shipId in userShipTxHashes[username]) {
+        const shipTxHash = userShipTxHashes[username][shipId];
+        const quitTxHash = await quit(shipTxHash);
+        if (!quitTxHash) {
+          socket.emit("error", { message: `Failed to quit ship ${shipId}` });
+        }
       }
 
-      // Get client session
-      const session = getClientSession(socket.id);
-      if (!session?.shipTxHash) {
-        handleError(socket, new Error("No active session found"), "quit");
-        return;
-      }
-
-      // Call quit function
-      let quitTxHash: string | undefined;
-      try {
-        quitTxHash = await quitShip(session.shipTxHash);
-      } catch (err) {
-        handleError(socket, err, "quit (quitShip)");
-        return;
-      }
-      if (quitTxHash) {
-        await writeFile("./backend/user-hash/ships.json", JSON.stringify({ txHash: quitTxHash }));
-      }
-
-      // Clean up game state
-      delete gameState.ships[data.username];
-      clientSessions.delete(socket.id);
-
-      io.emit("game-cleared", { username: data.username, message: `${data.username} quit` });
-      console.log(`${data.username} quit successfully`);
+      delete userShipTxHashes[username];
+      delete gameState.ships[username];
+      io.emit("game-cleared", {
+        username,
+        message: `${username} has quit the game`,
+      });
     } catch (err) {
-      handleError(socket, err, "quit");
+      socket.emit("error", {
+        message: `Failed to process quit for ${username}`,
+      });
     }
   });
 
   socket.on("disconnect", () => {
     console.log("Client disconnected:", socket.id);
-
-    // Only clean up connection tracking, keep ship state persistent
-    const session = getClientSession(socket.id);
-    if (session?.username) {
-      console.log(`Client ${session.username} disconnected, keeping ship state persistent`);
-    }
-
-    gameState.connectedClients.delete(socket.id);
-    clientSessions.delete(socket.id);
   });
 });
 
 const PORT = Number(process.env.PORT ?? 3002);
-httpServer.listen(PORT, () => console.log(`Server on http://localhost:${PORT}`));
+httpServer.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
+});

@@ -7,8 +7,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsup",
-    "start": "tsc && node -r ../load-env.js dist/index.js",
-    "dev": "tsx -r ../load-env.js index.ts"
+    "start": "tsc && node dist/index.js"
   },
   "author": "temasar",
   "license": "ISC",
