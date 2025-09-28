@@ -1,7 +1,10 @@
 import { MeshWallet, BlockfrostProvider, MaestroProvider} from "@meshsdk/core";
-import { readFile, writeFile } from "fs/promises";
+import { writeFile } from "fs/promises";
 import { join } from 'path';
-import "dotenv/config";
+import { config } from 'dotenv';
+import { HydraProvider } from "@meshsdk/hydra";
+
+config({ path: join(process.cwd(), '.env') });
 
 const seedPhrase  = process.env.SEED_PHRASE?.split(' ');
 if(seedPhrase == undefined){
@@ -16,6 +19,14 @@ if(maestro_API == undefined){
   throw new Error("Enter your maestro key in an env file")
 }
 export const blockchainProvider = new BlockfrostProvider(blockfrost_API);
+export const hydra_api_url = process.env.HYDRA_API_URL;
+if(hydra_api_url == undefined){
+  throw new Error("Enter your hydra api url in an env file")
+}
+export const hydraProvider = new HydraProvider({
+  httpUrl: hydra_api_url,
+});
+
 export const myWallet = new MeshWallet({
   networkId: 0,
   fetcher: blockchainProvider,
@@ -28,11 +39,11 @@ export const myWallet = new MeshWallet({
 
 export const hydraWallet = new MeshWallet({
   networkId: 0, 
-  fetcher: blockchainProvider,
-  submitter: blockchainProvider,
+  fetcher: hydraProvider,
+  submitter: hydraProvider,
   key: {
-    type: 'cli',
-    payment: "5820629fe8acfb0e2573afcb378c8ef3f81622f4e636ab0f90d9cd017d3c628d2dca",
+    type: 'mnemonic',
+    words: seedPhrase,
   },
 });
 
@@ -42,16 +53,8 @@ export const maestroprovider = new MaestroProvider({
   turboSubmit:false
 });
 
-const blockData = await blockchainProvider.fetchLatestBlock();
-export const time = blockData.time;
-const slot = blockData.slot;
-
-export const tx_latest_slot = Number(slot) + 300;
-export const tx_earliest_slot = Number(slot) - 60;
-//export const tx_earliest_posix_time = time - 60 * 1000;     //- 1 minute from now
-
 const __dirname = (process.cwd())
-const __filedir = join(__dirname, 'offchain/src/admin/deploy/ref-script/');
+const __filedir = join(__dirname, 'src/offchain/src/admin/deploy/ref-script/');
 
 export const writeScriptRefJson = async (filename: string, txHash: string) => {
   await writeFile(
@@ -59,12 +62,3 @@ export const writeScriptRefJson = async (filename: string, txHash: string) => {
     JSON.stringify({ txHash: txHash })
     );
 };
-
-export const readScripRefJson = async (filename: string) => {
-const scriptRef = JSON.parse(
-  await readFile(__filedir + filename + ".json", "utf-8"));
-  if(!scriptRef){
-    throw new Error(`${filename} scriptref not found`);
-  }
-  return scriptRef;
-}

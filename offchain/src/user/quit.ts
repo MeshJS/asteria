@@ -1,4 +1,4 @@
-import { blockchainProvider, myWallet, readScripRefJson } from "../../utils.js";
+import { hydraWallet, hydraProvider } from "../../utils.js";
 import {
   conStr1,
   conStr3,
@@ -7,40 +7,24 @@ import {
   stringToHex,
   UTxO,
 } from "@meshsdk/core";
+import { pelletCbor, pelletScripthash, spacetimeCbor, spacetimeScriptHash } from "../admin/deploy/hydra-deploy.js";
 
-const changeAddress = await myWallet.getChangeAddress();
-const collateral: UTxO = (await myWallet.getCollateral())[0]!;
-const utxos = await myWallet.getUtxos();
+const changeAddress = await hydraWallet.getChangeAddress();
+const collateral: UTxO = (await hydraWallet.getCollateral())[0]!;
+const utxos = await hydraWallet.getUtxos();
 
 async function quit(ship_tx_hash: string) {
-  const spacetimeDeployScript = await readScripRefJson("spacetimeref");
-  if (!spacetimeDeployScript.txHash) {
-    throw Error("spacetime script-ref not found, deploy spacetime first.");
-  }
-  const pelletDeployScript = await readScripRefJson("pelletref");
-  if (!pelletDeployScript.txHash) {
-    throw Error("pellet script-ref not found, deploy pellet first.");
-  }
 
-  const spacetime_scriptref_utxo = await blockchainProvider.fetchUTxOs(
-    spacetimeDeployScript.txHash
-  );
-  const shipyard_policyid = spacetime_scriptref_utxo[0].output.scriptHash;
-
-  const pellet_scriptref_utxo = await blockchainProvider.fetchUTxOs(
-    pelletDeployScript.txHash
-  );
-  const fuel_policyId = pellet_scriptref_utxo[0].output.scriptHash;
   const fuelTokenName = stringToHex("FUEL");
 
-  const shipUtxos = await blockchainProvider.fetchUTxOs(ship_tx_hash, 1);
+  const shipUtxos = await hydraProvider.fetchUTxOs(ship_tx_hash, 1);
 
   const ship = shipUtxos[0];
-  if (!ship.output.plutusData) {
+  if (!ship?.output.plutusData) {
     throw new Error("ship datum not found");
   }
-  const shipInputFuel = ship.output.amount.find(
-    (Asset) => Asset.unit == fuel_policyId + fuelTokenName
+  const shipInputFuel = ship?.output.amount.find(
+    (Asset) => Asset.unit == pelletScripthash + fuelTokenName
   );
   if (!shipInputFuel) {
     throw new Error("ship input Fuel not found");
@@ -60,9 +44,8 @@ async function quit(ship_tx_hash: string) {
   const quitRedeemer = conStr3([]);
 
   const txbuilder = new MeshTxBuilder({
-    submitter: blockchainProvider,
-    fetcher: blockchainProvider,
-    evaluator: blockchainProvider,
+    submitter: hydraProvider,
+    fetcher: hydraProvider,
     verbose: true,
   });
   console.log("ship fuel", shipFuel);
@@ -71,31 +54,31 @@ async function quit(ship_tx_hash: string) {
     .txIn(ship.input.txHash, ship.input.outputIndex)
     .txInRedeemerValue(quitRedeemer, "JSON")
     .txInInlineDatumPresent()
-    .spendingTxInReference(spacetimeDeployScript.txHash, 0)
+    .txInScript(spacetimeCbor)
 
     .mintPlutusScriptV3()
-    .mint("-1", shipyard_policyid!, ship_datum_ShipTokenName)
-    .mintTxInReference(spacetimeDeployScript.txHash, 0)
+    .mint("-1", spacetimeScriptHash!, ship_datum_ShipTokenName)
+    .mintingScript(spacetimeCbor)
     .mintRedeemerValue(burnShipRedeemer, "JSON")
     .mintPlutusScriptV3()
-    .mint("-" + shipFuel, fuel_policyId!, fuelTokenName)
-    .mintTxInReference(pelletDeployScript.txHash, 0)
+    .mint("-" + shipFuel, pelletScripthash!, fuelTokenName)
+    .mintingScript(pelletCbor)
     .mintRedeemerValue(burnfuelRedeemer, "JSON")
 
-    .txOut(myWallet.addresses.baseAddressBech32!, [
+    .txOut(hydraWallet.addresses.baseAddressBech32!, [
       {
-        unit: shipyard_policyid + ship_datum_PilotTokenName,
+        unit: spacetimeScriptHash + ship_datum_PilotTokenName,
         quantity: "1",
       },
     ])
-    .txInCollateral(collateral.input.txHash, collateral.input.outputIndex)
+    .txInCollateral("0264c2a00407c5c7ac003304714a1fd67e7b93a9c0f49da6b4caa4acae14236b", 3)
     .changeAddress(changeAddress)
     .selectUtxosFrom(utxos)
     .setNetwork("preprod")
     .complete();
 
-  const signedTx = await myWallet.signTx(unsignedTx);
-  const txhash = await myWallet.submitTx(signedTx);
+  const signedTx = await hydraWallet.signTx(unsignedTx);
+  const txhash = await hydraWallet.submitTx(signedTx);
   return txhash;
 }
 
