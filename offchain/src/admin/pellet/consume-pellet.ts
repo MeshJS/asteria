@@ -1,31 +1,19 @@
 import { conStr1, MeshTxBuilder, stringToHex, UTxO } from "@meshsdk/core";
-import {
-  blockchainProvider,
-  maestroprovider,
-  myWallet,
-  readScripRefJson,
-} from "../../../utils.js";
+import { hydraProvider, hydraWallet } from "../../../utils.js";
 import { admintoken } from "../../../config.js";
+import { pelletCbor, pelletScripthash } from "../deploy/hydra-deploy.js";
 
-const changeAddress = await myWallet.getChangeAddress();
-const collateral: UTxO = (await myWallet.getCollateral())[0]!;
-const utxos = await myWallet.getUtxos();
+const changeAddress = await hydraWallet.getChangeAddress();
+const collateral: UTxO = (await hydraWallet.getCollateral())[0]!;
+const utxos = await hydraWallet.getUtxos();
 
 const consumePellets = async (pelletTxhash: string) => {
-  const pelletDeployScript = await readScripRefJson("pelletref");
-  if (!pelletDeployScript.txHash) {
-    throw Error("pellet script-ref not found, deploy pellet first.");
-  }
-
-  const pellet_scriptref_utxo = await maestroprovider.fetchUTxOs(
-    pelletDeployScript.txHash
-  );
-  const fuel_policyId = pellet_scriptref_utxo[0].output.scriptHash;
+  await hydraProvider.connect();
   const fuelTokenName = stringToHex("FUEL");
 
-  const pelletsUtxo = await maestroprovider.fetchUTxOs(pelletTxhash);
+  const pelletsUtxo = await hydraProvider.fetchUTxOs(pelletTxhash);
+  console.log("pelletsUtxo", pelletsUtxo[0]?.output.amount);
 
-  //skip last unused input index
   const pellets = pelletsUtxo.slice(0, -1).map((utxo, index) => ({
     input: {
       txHash: pelletTxhash,
@@ -36,14 +24,12 @@ const consumePellets = async (pelletTxhash: string) => {
 
   const totalFuel = pellets.reduce((sum, pellet) => {
     const asset = pellet.output.amount.find(
-      (asset) => asset.unit === fuel_policyId + fuelTokenName
+      (asset) => asset.unit === pelletScripthash + fuelTokenName
     );
     return sum + (Number(asset?.quantity) || 0);
   }, 0);
 
-  console.log('total Fuel',totalFuel);
-  console.log('pellet utxos',pelletsUtxo)
-  const addressUtxos = await myWallet
+  const addressUtxos = await hydraWallet
     .getUtxos()
     .then((us) =>
       us.filter((u) =>
@@ -57,38 +43,32 @@ const consumePellets = async (pelletTxhash: string) => {
   const consumePelletRedeemer = conStr1([]);
   const burnfuelRedeemer = conStr1([]);
 
-  //TO DO: UTxO selection to filer spent outputs
-  
   const txbuilder = new MeshTxBuilder({
-    submitter: blockchainProvider,
-    fetcher: blockchainProvider,
-    evaluator: blockchainProvider,
+    submitter: hydraProvider,
+    fetcher: hydraProvider,
     verbose: true,
   });
 
-  for (const pellet of pellets) {
-    txbuilder
-      .spendingPlutusScriptV3()
-      .txIn(pellet.input.txHash, pellet.input.outputIndex)
-      .txInInlineDatumPresent()
-      .spendingTxInReference(pelletDeployScript.txHash, 0)
-      .txInRedeemerValue(consumePelletRedeemer, "JSON");
-  }
   txbuilder
-    .txIn(addressUtxos.input.txHash, addressUtxos.input.outputIndex)
+    .spendingPlutusScriptV3()
+    .txIn(pelletTxhash, 0)
+    .txInInlineDatumPresent()
+    .txInScript(pelletCbor)
+    .txInRedeemerValue(consumePelletRedeemer, "JSON");
+  txbuilder
+    .txIn(addressUtxos!.input.txHash, addressUtxos!.input.outputIndex)
     .mintPlutusScriptV3()
-    .mint("-" + totalFuel.toString(), fuel_policyId!, fuelTokenName)
-    .mintTxInReference(pelletDeployScript.txHash, 0)
+    .mint("-" + totalFuel.toString(), pelletScripthash, fuelTokenName)
+    .mintingScript(pelletCbor)
     .mintRedeemerValue(burnfuelRedeemer, "JSON")
 
     .txInCollateral(collateral.input.txHash, collateral.input.outputIndex)
     .setNetwork("preprod")
     .changeAddress(changeAddress)
     .selectUtxosFrom(utxos);
-
   const unsignedTx = await txbuilder.complete();
-  const signedTx = await myWallet.signTx(unsignedTx);
-  const txhash = await myWallet.submitTx(signedTx);
+  const signedTx = await hydraWallet.signTx(unsignedTx);
+  const txhash = await hydraWallet.submitTx(signedTx);
   return txhash;
 };
 

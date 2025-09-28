@@ -5,72 +5,33 @@ import {
   deserializeDatum,
   integer,
   MeshTxBuilder,
-  PlutusScript,
   policyId,
-  serializePlutusScript,
-  SLOT_CONFIG_NETWORK,
   stringToHex,
-  unixTimeToEnclosingSlot,
   UTxO,
 } from "@meshsdk/core";
-import {
-  blockchainProvider,
-  myWallet,
-  readScripRefJson,
-} from "../../utils.js";
+import { hydraProvider, hydraWallet } from "../../utils.js";
 import { ship_mint_lovelace_fee, initial_fuel } from "../../config.js";
 import { admintoken } from "../../config.js";
-import { fromScriptRef} from "@meshsdk/core-cst";
-import { maestroprovider } from "../../utils.js";
+import {
+  asteriaCbor,
+  asteriaScriptAddress,
+  pelletCbor,
+  pelletScripthash,
+  spacetimeCbor,
+  spacetimeScriptAddress,
+  spacetimeScriptHash,
+} from "../admin/deploy/hydra-deploy.js";
 
-const changeAddress = await myWallet.getChangeAddress();
-const collateral: UTxO = (await myWallet.getCollateral())[0]!;
-const utxos = await myWallet.getUtxos();
+const changeAddress = await hydraWallet.getChangeAddress();
+const collateral: UTxO = (await hydraWallet.getCollateral())[20]!;
+const utxos = await hydraWallet.getUtxos();
 
 async function createShip(posX: number, posY: number) {
-  const asteriaDeployScript = await readScripRefJson("asteriaref");
-  if (!asteriaDeployScript.txHash) {
-    throw new Error("asteria script-ref not found, deploy asteria first.");
-  }
-  const spacetimeDeployScript = await readScripRefJson("spacetimeref");
-  if (!spacetimeDeployScript.txHash) {
-    throw new Error("spacetime script-ref not found, deploy spacetime first.");
-  }
-  const pelletDeployScript = await readScripRefJson("pelletref");
-  if (!pelletDeployScript.txHash) {
-    throw new Error("pellet script-ref not found, deploy pellet first.");
-  }
-
-  const asteriaScriptRefUtxos = await blockchainProvider.fetchUTxOs(
-    asteriaDeployScript.txHash
-  );
-  const asteriaScriptRef = fromScriptRef(
-    asteriaScriptRefUtxos[0].output.scriptRef!
-  );
-  const asteriaPlutusScript = asteriaScriptRef as PlutusScript;
-  const asteriaScriptAddress =
-    serializePlutusScript(asteriaPlutusScript).address;
-  console.log(asteriaScriptAddress);
-  const spacetimeScriptRefUtxos = await blockchainProvider.fetchUTxOs(
-    spacetimeDeployScript.txHash
-  );
-  const shipyardPolicyid = spacetimeScriptRefUtxos[0].output.scriptHash;
-  const spacetimeScriptRef = fromScriptRef(
-    spacetimeScriptRefUtxos[0].output.scriptRef!
-  );
-  const spacetimePlutusScript = spacetimeScriptRef as PlutusScript;
-  const spacetimeAddress = serializePlutusScript(spacetimePlutusScript).address;
-
-  const pelletScriptRefUtxos = await blockchainProvider.fetchUTxOs(
-    pelletDeployScript.txHash
-  );
-  const fuelPolicyId = pelletScriptRefUtxos[0].output.scriptHash;
-
-  const asteriaInputUtxos = await blockchainProvider.fetchAddressUTxOs(
+  await hydraProvider.connect();
+  const asteriaInputUtxos = await hydraProvider.fetchAddressUTxOs(
     asteriaScriptAddress,
     admintoken.policyid + admintoken.name
   );
-
   const asteria = asteriaInputUtxos[0];
   if (!asteria) {
     throw new Error("create asteria first");
@@ -98,28 +59,25 @@ async function createShip(posX: number, posY: number) {
     "PILOT" + asteriaInputShipcounter.toString()
   );
 
-  const upperBoundTime = Date.now() + 10 * 60 * 1000;
-
   const shipDatum = conStr0([
     integer(posX),
     integer(posY),
     assetName(shipTokenName),
-    assetName(pilotTokenName)
+    assetName(pilotTokenName),
   ]);
-
-  const tx_latest_slot = unixTimeToEnclosingSlot(
-    upperBoundTime,
-    SLOT_CONFIG_NETWORK.preprod
-  );
 
   const assetToSpacetimeAddress: Asset[] = [
     {
-      unit: shipyardPolicyid! + shipTokenName,
+      unit: spacetimeScriptHash! + shipTokenName,
       quantity: "1",
     },
     {
-      unit: fuelPolicyId! + fuelTokenName,
+      unit: pelletScripthash! + fuelTokenName,
       quantity: initial_fuel,
+    },
+    {
+      unit: "lovelace",
+      quantity: "3000000",
     },
   ];
   const totalRewardsAsset: Asset[] = [
@@ -132,12 +90,16 @@ async function createShip(posX: number, posY: number) {
       quantity: (
         Number(asteriaInputAda?.quantity) + ship_mint_lovelace_fee
       ).toString(),
-    },
+    }
   ];
   const pilotTokenAsset: Asset[] = [
     {
-      unit: shipyardPolicyid + pilotTokenName,
+      unit: spacetimeScriptHash! + pilotTokenName,
       quantity: "1",
+    },
+    {
+      unit: "lovelace",
+      quantity: "3000000",
     },
   ];
 
@@ -146,44 +108,45 @@ async function createShip(posX: number, posY: number) {
   const mintFuelRedeemer = conStr0([]);
 
   const txBuilder = new MeshTxBuilder({
-    submitter: blockchainProvider,
-    fetcher: maestroprovider,
-    evaluator: blockchainProvider,
+    fetcher: hydraProvider,
+    submitter: hydraProvider,
+    isHydra: true,
     verbose: true,
   });
 
   const unsignedTx = await txBuilder
     .spendingPlutusScriptV3()
     .txIn(asteria.input.txHash, asteria.input.outputIndex)
-    .txInRedeemerValue(addNewshipRedeemer, "JSON")
-    .spendingTxInReference(asteriaDeployScript.txHash, 0)
+    .txInRedeemerValue(addNewshipRedeemer, "JSON",{mem: 1000000, steps: 500000000})  //manually evaluate the transaction 
+    .txInScript(asteriaCbor)
     .txInInlineDatumPresent()
     .txOut(asteriaScriptAddress, totalRewardsAsset)
     .txOutInlineDatumValue(asteriaOutputDatum, "JSON")
     .mintPlutusScriptV3()
-    .mint("1", shipyardPolicyid!, shipTokenName)
-    .mintTxInReference(spacetimeDeployScript.txHash, 0)
-    .mintRedeemerValue(mintShipRedeemer, "JSON")
+    .mint("1", spacetimeScriptHash!, shipTokenName)
+    .mintingScript(spacetimeCbor)
+    .mintRedeemerValue(mintShipRedeemer, "JSON",{mem: 1000000, steps: 500000000})
     .mintPlutusScriptV3()
-    .mint("1", shipyardPolicyid!, pilotTokenName)
-    .mintTxInReference(spacetimeDeployScript.txHash, 0)
-    .mintRedeemerValue(mintShipRedeemer, "JSON")
+    .mint("1", spacetimeScriptHash!, pilotTokenName)
+    .mintingScript(spacetimeCbor)
+    .mintRedeemerValue(mintShipRedeemer, "JSON",{mem: 1000000, steps: 500000000})
     .mintPlutusScriptV3()
-    .mint(initial_fuel, fuelPolicyId!, fuelTokenName)
-    .mintTxInReference(pelletDeployScript.txHash, 0)
-    .mintRedeemerValue(mintFuelRedeemer, "JSON")
+    .mint(initial_fuel, pelletScripthash!, fuelTokenName)
+    .mintingScript(pelletCbor)
+    .mintRedeemerValue(mintFuelRedeemer, "JSON",{mem: 1000000, steps: 500000000})
+    .setFee("6000000")
 
-    .txOut(spacetimeAddress, assetToSpacetimeAddress)
+    .txOut(spacetimeScriptAddress, assetToSpacetimeAddress)
     .txOutInlineDatumValue(shipDatum, "JSON")
-    .txOut(myWallet.addresses.baseAddressBech32!, pilotTokenAsset)
-    .txInCollateral(collateral.input.txHash, collateral.input.outputIndex)
+    .txOut(hydraWallet.getAddresses().baseAddressBech32!, pilotTokenAsset)
+    .txInCollateral(collateral.input.txHash,collateral.input.outputIndex)
     .selectUtxosFrom(utxos)
     .changeAddress(changeAddress)
     .setNetwork("preprod")
     .complete();
 
-  const signedTx = await myWallet.signTx(unsignedTx, true);
-  const shiptxHash = await myWallet.submitTx(signedTx);
+  const signedTx = await hydraWallet.signTx(unsignedTx);
+  const shiptxHash = await hydraWallet.submitTx(signedTx);
   return shiptxHash;
 }
 export { createShip };

@@ -1,0 +1,30 @@
+import Layout from "./layout";
+export default ({ children }) => <Layout>{children}</Layout>;
+
+# Gameplay (Hydra Version)
+
+## Building a ship
+
+- To create a ship, the participant mints a new `ShipToken` and matching `PilotToken` through a mint validator called `ShipyardPolicy`.
+- Each Pilot/Ship token pair is unique. The validator ensures uniqueness by incrementing a counter stored in the `AsteriaUtxo`.
+- The asset names of the `ShipToken` and `PilotToken` include the counter value as a suffix, e.g. `SHIP23` and `PILOT23`.
+- The `ShipToken` must be locked in the `SpaceTimeScript`, while the `PilotToken` is sent to the participant’s wallet.
+- Minting requires paying the constant `SHIP_MINT_FEE`, which is added to the `AsteriaUtxo` reward pot.
+
+## Moving your ship
+
+- Movement is achieved by consuming the `ShipState` UTxO and producing a new one with updated coordinates.
+- Each movement consumes fuel. The amount of fuel burned is proportional to the distance moved, defined by the constant `FUEL_PER_DISTANCE_UNIT`.
+
+## Gathering fuel
+
+- Gathering fuel requires consuming both the `ShipUtxo` and a `PelletUtxo`, producing a new `ShipUtxo` with increased fuel.
+- A ship can only gather fuel if its position overlaps with the pellet’s position on the grid.
+- The total fuel in a ship cannot exceed the `MAX_SHIP_FUEL` parameter.
+- If the fuel pellet contains more fuel than the ship can take, a new `PelletUtxo` is recreated with the leftover fuel at the same grid location.
+
+## Mining Asteria
+
+- Mining is achieved by consuming both the `ShipUtxo` and `AsteriaUtxo`, and outputting a new state where assets are transferred from `AsteriaUtxo` into the participant’s wallet.
+- The maximum extractable amount is constrained by the `MAX_ASTERIA_MINING` percentage of the total available assets.
+- Mining requires that the ship be located at coordinates `(0, 0)` on the grid.

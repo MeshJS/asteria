@@ -1,0 +1,39 @@
+import Layout from "./layout";
+import CodeBlock from "@/components/CodeBlock";
+
+export default ({ children }) => <Layout>{children}</Layout>;
+
+# Build Ship (Hydra Mesh Example)
+
+Creates a `ShipState` UTxO locking min ada and a `ShipToken` (minted in this tx),  
+specifying in the datum the initial `pos_x` and `pos_y` coordinates of the ship,  
+and setting `fuel` to an initial amount.  
+Also adds to the `AsteriaUTxO` value the `SHIP_MINT_FEE` paid by the user.
+
+![createShip diagram](/txs/build-ship.png)
+
+## Mesh Example
+
+You can use the following Mesh code to build your ship on **Hydra**.  
+The heavy lifting (Plutus logic, datum building, minting, etc.) is handled in `createShip`.  
+Here, you only need to **pass in the position variables**.
+
+<CodeBlock content={`import { hydraProvider, hydraWallet } from "../../utils.js";
+import { createShip } from "../ship/createShip.js";
+
+async function main() {
+  // Ship initial coordinates
+  const posX = 20;
+  const posY = 20;
+
+  // Make sure provider is connected
+  await hydraProvider.connect();
+
+  // Build the ship transaction
+  const txHash = await createShip(posX, posY);
+
+  console.log("Ship created with tx hash:", txHash);
+}
+
+main();
+`} />
