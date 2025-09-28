@@ -1,31 +1,68 @@
+# Hydra-Asteria 🚀  
 
-# Hydra-Asteria 🚀
+**Hydra-Asteria** is a real-time multiplayer space strategy game built on **Cardano’s Hydra Layer 2**.  
+It demonstrates how the **eUTxO model** and **Hydra heads** can be used to handle **high-throughput, low-latency smart contract transactions** in a live gaming environment using MeshSDK.  
 
-Hydra-Asteria is a real-time space strategy game built on Cardano’s Hydra Layer 2.
-It demonstrates how the eUTxO model and Hydra heads can be used to handle high-throughput, low-latency smart contract transactions in a live gaming environment.
+Inspired by [TxPipe’s Asteria](https://github.com/txpipe/asteria) on Cardano L1.  
 
-Inspired by [TxPipe's Asteria](https://github.com/txpipe/asteria)
+---
+
+##  Gameplay Overview  
+
+- **Objective**  
+  Navigate your ships across a **100x100 grid**, collect fuel pellets, and race to the center **(0,0)** to mine the **Asteria crystal** and win.  
+
+  Compete against other players in real time — all moves are instantly synchronized using WebSockets.  
+
+- **Game Loop**  
+  1. Place your ship(s) on the grid  
+  2. Move step by step (up, down, left, right)  
+  3. Collect fuel pellets to survive  
+  4. Reach the center and mine the Asteria crystal  
+
+---
 
 
-## ⚙️ Technical Details
+##  Technical Details  
 
-Real-time Multiplayer
-Powered by WebSockets for instant synchronization.
+- **Real-time Multiplayer**  
+  Powered by **WebSockets** for instant synchronization.  
 
-- Hydra Layer 2 Integration
+- **Hydra Layer 2 Integration**  
+  - Hydra head operations (open, commit, close) manage fast transaction throughput.  
+  - Asteria game actions (ship placement, movement, pellet collection, mining) are executed as **Hydra transactions**.  
+  - Connect your **Hydra API URL** to interact with the game in Hydra.  
 
-- Hydra head operations (open, commit, close) manage fast transaction throughput.
+- **Grid System**  
+  The world is a **100x100 Cartesian grid** with the center at `(0,0)`. Ships move in discrete steps.  
 
-- Asteria game actions (ship placement, movement, pellet collection, mining) are executed as Hydra transactions.
+---
 
-- Connect your Hydra API URL to interact with the game in Hydra.
+##  Prerequisites  
 
-- Grid System
-The world is a 100x100 Cartesian grid with the center at (0,0). Ships move in discrete steps.
+A running cardano and Hydra-node  
 
-## Prerequisites
+- [Mesh-hydra tutorial](https://meshjs.dev/hydra/tutorial) 
 
-- Hydra node and cardano node
- [check tutorial](https://meshjs.dev/hydra/tutorial)
+---
 
- 
+##  Setup & Installation  
+
+Clone the repository:  
+
+```bash
+git clone https://github.com/MeshJS/asteria.git
+cd hydra-asteria
+```
+
+```bash
+yarn install
+# or
+npm install
+
+NEXT_PUBLIC_HYDRA_API_URL=http://localhost:4001
+```
+
+![Hydra log1 Diagram](./public/visualizer/hydra-logs1.png)
+![Hydra log2 Diagram](./public/visualizer/hydra-logs2.png)
+![Hydra Head3 Diagram](./public/visualizer/hydra-logs3.png)
