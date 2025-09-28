@@ -68,4 +68,4 @@ NEXT_PUBLIC_HYDRA_API_URL=http://localhost:4001
 ![Hydra log1 Diagram](./frontend/public/visualizer/hydra-logs1.png)
 ![Hydra log2 Diagram](./frontend/public/visualizer/hydra-logs2.png)
 ![Hydra Head3 Diagram](./frontend/public/visualizer/hydra-logs3.png)
-![Hydra Head4 Diagram](./frontend/public/visualizer/head-logs4.png)
+![Hydra Head4 Diagram](./frontend/public/visualizer/Head-logs5.png)
