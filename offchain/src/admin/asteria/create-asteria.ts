@@ -3,54 +3,26 @@ import {
   conStr0,
   integer,
   MeshTxBuilder,
-  PlutusScript,
   policyId,
 } from "@meshsdk/core";
-import {
-  myWallet,
-  blockchainProvider,
-  readScripRefJson,
-} from "../../../utils.js";
-import { fromScriptRef, resolvePlutusScriptAddress } from "@meshsdk/core-cst";
+import { hydraWallet, hydraProvider } from "../../../utils.js";
 import { admintoken } from "../../../config.js";
+import {
+  asteriaScriptAddress,
+  spacetimeScriptHash,
+} from "../deploy/hydra-deploy.js";
 
-const utxos = await myWallet.getUtxos();
-const changeAddress = await myWallet.getChangeAddress();
+const utxos = await hydraWallet.getUtxos();
+const changeAddress = await hydraWallet.getChangeAddress();
 
 export async function createAsteria() {
-  const asteriaDeployScript = await readScripRefJson("asteriaref");
-  if (!asteriaDeployScript.txHash) {
-    throw Error("asteria script-ref not found, deploy asteria first.");
-  }
+  await hydraProvider.connect();
 
-  const spacetimeDeployScript = await readScripRefJson("spacetimeref");
-  if (!spacetimeDeployScript.txHash) {
-    throw Error("spacetime script-ref not found, deploy spacetime first.");
-  }
-
-  const asteriaUtxo = await blockchainProvider.fetchUTxOs(
-    asteriaDeployScript.txHash
-  );
-  const asteriaScriptRef = fromScriptRef(asteriaUtxo[0].output.scriptRef!);
-  const asteriascriptPlutus = asteriaScriptRef as PlutusScript;
-  const asteriaValidatorAddress = resolvePlutusScriptAddress(
-    asteriascriptPlutus,
-    0
-  );
-
-  const spacetimeUtxo = await blockchainProvider.fetchUTxOs(
-    spacetimeDeployScript.txHash
-  );
-  const shipyardPolicyId = spacetimeUtxo[0].output.scriptHash;
-
-  const asteriaDatum = conStr0([
-    integer(0),
-    policyId(shipyardPolicyId!), //policyId
-  ]);
+  const asteriaDatum = conStr0([integer(0), policyId(spacetimeScriptHash!)]);
   const totalRewardsAsset: Asset[] = [
     {
       unit: "lovelace",
-      quantity: "200000000",
+      quantity: "100000000",
     },
     {
       unit: admintoken.policyid + admintoken.name,
@@ -59,19 +31,20 @@ export async function createAsteria() {
   ];
 
   const txBuilder = new MeshTxBuilder({
-    fetcher: blockchainProvider,
+    fetcher: hydraProvider,
+    submitter: hydraProvider,
     verbose: true,
   });
 
   const unsignedTx = await txBuilder
-    .txOut(asteriaValidatorAddress, totalRewardsAsset)
+    .txOut(asteriaScriptAddress, totalRewardsAsset)
     .txOutInlineDatumValue(asteriaDatum, "JSON")
     .selectUtxosFrom(utxos)
     .changeAddress(changeAddress)
-    .setNetwork("preview")
+    .setNetwork("preprod")
     .complete();
 
-  const signedTx = await myWallet.signTx(unsignedTx);
-  const asteriaTxhash = await myWallet.submitTx(signedTx);
+  const signedTx = await hydraWallet.signTx(unsignedTx);
+  const asteriaTxhash = await hydraWallet.submitTx(signedTx);
   return asteriaTxhash;
 }
