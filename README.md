@@ -63,6 +63,8 @@ npm install
 NEXT_PUBLIC_HYDRA_API_URL=http://localhost:4001
 ```
 
+## Head-logs Examples
+
 ![Hydra log1 Diagram](./frontend/public/visualizer/hydra-logs1.png)
 ![Hydra log2 Diagram](./frontend/public/visualizer/hydra-logs2.png)
 ![Hydra Head3 Diagram](./frontend/public/visualizer/hydra-logs3.png)
