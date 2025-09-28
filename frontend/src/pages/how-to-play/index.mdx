@@ -1,0 +1,25 @@
+import Layout from "./layout";
+export default ({ children }) => <Layout>{children}</Layout>;
+
+# Introduction
+
+Asteria on **Hydra** is a real-time bot challenge designed to showcase the power of the extended UTxO (eUTxO) model within a Hydra Head.  
+It highlights how Hydra enables **scalable, concurrent, and low-latency interactions** on top of Cardano.
+
+Developers participate by building automated agents (bots) that interact directly with a Hydra Head.  
+Each bot controls UTxOs constrained by on-chain validators, and submits state transitions through the Hydra network.
+
+Once a challenge has been initialized, all interactions and rewards occur inside the Hydra Head — fully decentralized, with no administrators able to adjust mechanics.
+
+## Game Overview
+
+- Each bot controls a (space) ship represented by a UTxO (`ShipState`) inside the Hydra Head.
+- The goal is to reach coordinates `(0, 0)`, the location of **Asteria**, in order to claim rewards.
+- Movement is constrained by available fuel. Ships must plan carefully, gathering fuel from pellets scattered across the grid.
+- Fuel pellets are represented by UTxOs (`PelletState`) that can be collected when a ship reaches their grid coordinates.
+
+## Ongoing Challenges
+
+- Multiple Hydra challenges (games) can run in parallel, each with its own participants and state.  
+- Because all logic and scripts are open-source, anyone can start their own challenge with custom rules or rewards.  
+- Gameplay is **fast and concurrent** — enabled by Hydra’s high-throughput UTxO processing.  

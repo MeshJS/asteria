@@ -1,0 +1,46 @@
+import Layout from "./layout";
+import CodeBlock from "@/components/CodeBlock";
+export default ({ children }) => <Layout>{children}</Layout>;
+
+# Gather Fuel
+
+Updates the `fuel` datum field of the `ShipState` UTxO by adding the amount of fuel tokens available in the `PelletState` UTxO.  
+The ship coordinates must match the pellet coordinates for this operation to be valid.
+
+![gatherFuel diagram](/txs/gather-fuel.png)
+
+## Mesh / Hydra Example
+
+The `gatherFuel` function builds and submits the transaction using Mesh + Hydra.  
+It expects the following parameters:
+
+- `ship_tx_hash` — transaction hash containing the ship UTxO  
+- `pellet_tx_hash` — transaction hash containing the pellet UTxO  
+- `pellet_tx_index` — output index of the pellet UTxO  
+- `gather_amount` — how much fuel to gather from the pellet  
+
+<CodeBlock content={`import { gatherFuel } from "../ship/gatherFuel.js";
+
+async function main() {
+  // Replace with actual UTxO references and amount you want to gather
+  const ship_tx_hash = "3e04a7a3e4a1015705c44822feaf5f2da1e9609eebd68310c87b7eba7923739a";
+  const pellet_tx_hash = "22af0198b4e6e9c8306392c7ac0ea97b8a2f659a6312708b22b7717805554b97";
+  const pellet_tx_index = 0;
+  const gather_amount = 50;
+
+  try {
+    const txHash = await gatherFuel(
+      ship_tx_hash,
+      pellet_tx_hash,
+      pellet_tx_index,
+      gather_amount
+    );
+
+    console.log("Transaction submitted, hash:", txHash);
+  } catch (err) {
+    console.error("Failed to gather fuel:", err);
+  }
+}
+
+main();
+`} />

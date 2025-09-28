@@ -1,0 +1,39 @@
+import Layout from "./layout";
+import CodeBlock from "@/components/CodeBlock";
+export default ({ children }) => <Layout>{children}</Layout>;
+
+# Move Ship
+
+Updates the `pos_x`, `pos_y` and `fuel` datum fields of the `ShipState` UTxO by adding the `delta_x` and `delta_y` values specified in the redeemer, and subtracting the fuel amount needed for the displacement.
+
+![moveShip diagram](/txs/move-ship.png)
+
+## Hydra Example
+
+You can use the following Hydra script to move your ship. The supporting files are available in your Hydra setup.
+
+<CodeBlock content={`import { moveShip } from "../src/txs/moveShip";
+import { hydraWallet, hydraProvider } from "../utils.js";
+
+async function main() {
+  // Example values (replace with real UTxO and deltas)
+  const ship_tx_hash =
+    "41f2a593e131a3c5db878bbe7753b89c8c6de555b7127e812c0f488d1a898368";
+  const ship_tx_index = 0;
+  const delta_X = -1;
+  const delta_Y = -1;
+
+  await hydraProvider.connect();
+
+  const txHash = await moveShip(
+    ship_tx_hash,
+    ship_tx_index,
+    delta_X,
+    delta_Y
+  );
+
+  console.log("Submitted MoveShip Tx:", txHash);
+}
+
+main().catch(console.error);
+`} />

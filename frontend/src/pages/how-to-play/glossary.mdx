@@ -1,0 +1,38 @@
+import Layout from "./layout";
+export default ({ children }) => <Layout>{children}</Layout>;
+
+# Glossary
+
+## Grid
+
+- the grid is a virtual 2D space (`x`, `y`) used for positioning ships and resources.
+- there is no on-chain representation of the grid itself — it exists off-chain as part of game logic.
+- coordinates are discrete integers.
+- `(0, 0)` is considered the center of the grid, where Asteria is located.
+
+## Ship
+
+- a ship is identified by a Cardano native asset token under a specific policy id, called a `ShipToken`.
+- the UTxO holding the `ShipToken` defines the state of the ship. These UTxOs are referred to as `ShipState`.
+- the datum of a `ShipState` contains the ship’s current grid coordinates and available fuel.
+- all `ShipState` UTxOs live at the `SpaceScript` address, which enforces the valid transitions of ship state within Hydra.
+
+## Pilot
+
+- a pilot is represented by a native token under a separate policy id, called a `PilotToken`.
+- the `PilotToken` is held at an address controlled by the participant.
+- the presence of the `PilotToken` in a transaction input proves the authority of the participant to update their `ShipState`.
+
+## Fuel Pellet
+
+- a fuel pellet represents a source of `FuelToken` locked at a fixed grid position.
+- a pellet is represented by a UTxO at the `PelletScript` address, called `PelletState`.
+- the datum of a `PelletState` specifies the pellet’s position in the grid.
+- the amount of `FuelToken` in a `PelletState` represents the available fuel.
+
+## Asteria
+
+- Asteria is an asteroid located at the center of the grid `(0, 0)`, representing the final objective of the game.
+- it is represented by a UTxO called the `AsteriaUtxo`.
+- the `AsteriaUtxo` holds the aggregated rewards of the challenge.
+- it also contains a counter in its datum, used to guarantee uniqueness of `ShipToken` / `PilotToken` pairs.
