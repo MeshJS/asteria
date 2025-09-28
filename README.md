@@ -54,14 +54,31 @@ Clone the repository:
 git clone https://github.com/MeshJS/asteria.git
 cd hydra-asteria
 ```
+Install dependencies::
 
 ```bash
 yarn install
 # or
 npm install
-
-NEXT_PUBLIC_HYDRA_API_URL=http://localhost:4001
 ```
+Configure environment variables by creating a .env file in the root of your project:
+
+```bash
+NEXT_PUBLIC_HYDRA_API_URL=http://localhost:4001
+BLOCKFROST_APIKEY=your_blockfrost_api_key
+MAESTRO_APIKEY=your_maestro_api_key
+SEED_PHRASE= []
+```
+
+```bash
+yarn dev
+# or
+npm run dev
+```
+The app should now be running at:
+ http://localhost:3000
+
+ Hydra-node Running as well
 
 ## Head-logs Examples
 
