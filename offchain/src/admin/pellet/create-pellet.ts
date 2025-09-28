@@ -2,76 +2,53 @@ import {
   conStr0,
   integer,
   MeshTxBuilder,
-  PlutusScript,
   scriptHash,
   stringToHex,
   UTxO,
 } from "@meshsdk/core";
-import {
-  blockchainProvider,
-  myWallet,
-  readScripRefJson,
-} from "../../../utils.js";
+import { hydraProvider, hydraWallet } from "../../../utils.js";
 import { admintoken } from "../../../config.js";
-import { fromScriptRef, resolvePlutusScriptAddress } from "@meshsdk/core-cst";
+import {
+  pelletCbor,
+  pelletScriptAddress,
+  pelletScripthash,
+  spacetimeScriptHash,
+} from "../deploy/hydra-deploy.js";
 
-const changeAddress = await myWallet.getChangeAddress();
-const collateral: UTxO = (await myWallet.getCollateral())[0]!;
-const utxos = await myWallet.getUtxos();
-
-const spacetimeDeployScript = await readScripRefJson("spacetimeref");
-if (!spacetimeDeployScript.txHash) {
-  throw Error("spacetime script-ref not found, deploy spacetime first.");
-}
-const pelletDeployScript = await readScripRefJson("pelletref");
-if (!pelletDeployScript.txHash) {
-  throw Error("pellet script-ref not found, deploy pellet first.");
-}
-
-const pelletUtxo = await blockchainProvider.fetchUTxOs(
-  pelletDeployScript.txHash
-);
-const fuelPolicyID = pelletUtxo[0].output.scriptHash;
-
-const pelletScriptRef = fromScriptRef(pelletUtxo[0].output.scriptRef!);
-const pelletPlutusScript = pelletScriptRef as PlutusScript;
-const pelletScriptAddress = resolvePlutusScriptAddress(pelletPlutusScript, 0);
-
-const spacetimeUtxo = await blockchainProvider.fetchUTxOs(
-  spacetimeDeployScript.txHash
-);
-const shipyardPolicyId = spacetimeUtxo[0].output.scriptHash;
+const changeAddress = await hydraWallet.getChangeAddress();
+const collateral: UTxO = (await hydraWallet.getCollateral())[0]!;
+const utxos = await hydraWallet.getUtxos();
 
 export async function createPellet(
   pelletProperty: { posX: number; posY: number; fuel: string }[],
   totalFuelMint: string
 ) {
+  await hydraProvider.connect();
   const fueltokenNameHex = stringToHex("FUEL");
   const fuelReedemer = conStr0([]);
 
   const txBuilder = new MeshTxBuilder({
-    fetcher: blockchainProvider,
-    submitter: blockchainProvider,
-    evaluator: blockchainProvider,
+    fetcher: hydraProvider,
+    submitter: hydraProvider,
     verbose: true,
   });
   txBuilder
     .mintPlutusScriptV3()
-    .mint(totalFuelMint, fuelPolicyID!, fueltokenNameHex)
-    .mintTxInReference(pelletDeployScript.txHash, 0)
+    .mint(totalFuelMint, pelletScripthash, fueltokenNameHex)
+    .mintingScript(pelletCbor)
     .mintRedeemerValue(fuelReedemer, "JSON");
 
   for (const pellet of pelletProperty) {
     const pelletDatum = conStr0([
       integer(pellet.posX),
       integer(pellet.posY),
-      scriptHash(shipyardPolicyId!),
+      scriptHash(spacetimeScriptHash),
     ]);
 
     txBuilder
       .txOut(pelletScriptAddress, [
         {
-          unit: fuelPolicyID + fueltokenNameHex,
+          unit: pelletScripthash + fueltokenNameHex,
           quantity: pellet.fuel,
         },
         {
@@ -88,7 +65,7 @@ export async function createPellet(
     .setNetwork("preprod");
 
   const unsignedTx = await txBuilder.complete();
-  const signedTx = await myWallet.signTx(unsignedTx);
-  const pelletTxhash = await myWallet.submitTx(signedTx);
+  const signedTx = await hydraWallet.signTx(unsignedTx);
+  const pelletTxhash = await hydraProvider.submitTx(signedTx);
   return pelletTxhash;
 }

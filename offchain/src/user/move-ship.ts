@@ -1,156 +1,127 @@
-import { 
-    Asset, 
-    byteString, 
-    conStr0, 
-    conStr1, 
-    deserializeDatum, 
-    integer,
-    MeshTxBuilder, 
-    PlutusScript, 
-    serializePlutusScript, 
-    stringToHex,
-    UTxO } from "@meshsdk/core";
-import { blockchainProvider, maestroprovider, myWallet ,readScripRefJson,tx_earliest_slot,tx_latest_slot} from "../../utils.js";
-import { fromScriptRef, } from "@meshsdk/core-cst";
+import {
+  Asset,
+  byteString,
+  conStr0,
+  conStr1,
+  deserializeDatum,
+  integer,
+  MeshTxBuilder,
+  stringToHex,
+  UTxO,
+} from "@meshsdk/core";
+import { hydraWallet, hydraProvider } from "../../utils.js";
 import { fuel_per_step } from "../../config.js";
+import {
+  pelletCbor,
+  pelletScripthash,
+  spacetimeCbor,
+  spacetimeScriptAddress,
+  spacetimeScriptHash,
+} from "../admin/deploy/hydra-deploy.js";
 
-const changeAddress = await myWallet.getChangeAddress();
-const collateral: UTxO = (await myWallet.getCollateral())[0]!;
-const utxos = await myWallet.getUtxos();
-
-console.log('utxos',utxos)
+const changeAddress = await hydraWallet.getChangeAddress();
+const collateral: UTxO = (await hydraWallet.getCollateral())[0]!;
+//const utxos = await hydraWallet.getUtxos();
 
 async function moveShip(
-    delta_X: number,
-    delta_Y: number,
-    ship_tx_hash: string
-){
+  delta_X: number,
+  delta_Y: number,
+  ship_tx_hash: string
+) {
+  await hydraProvider.connect();
 
- const spacetimeDeployScript = await readScripRefJson("spacetimeref");
-  if (!spacetimeDeployScript.txHash) {
-    throw new Error("spacetime script-ref not found, deploy spacetime first.");
-  }
-  const pelletDeployScript = await readScripRefJson("pelletref");
-  if (!pelletDeployScript.txHash) {
-    throw new Error("pellet script-ref not found, deploy pellet first.");
+  const shipUtxo = await hydraProvider.fetchUTxOs(ship_tx_hash, 1);
+  const ship = shipUtxo[0];
+  if (!ship?.output.plutusData) {
+    throw Error("Ship Datum is Empty");
   }
 
-const spacetimeUtxos = await blockchainProvider.fetchUTxOs(spacetimeDeployScript.txHash);
-const spacetimeScriptRef = fromScriptRef(spacetimeUtxos[0].output.scriptRef!);
-const spacetimePlutusScript = spacetimeScriptRef as PlutusScript;
-const spacetimeAddress = serializePlutusScript(spacetimePlutusScript).address;
-const shipyardPolicyid = spacetimeUtxos[0].output.scriptHash;
+  const shipInputFuel = ship.output.amount.find(
+    (Asset) => Asset.unit == pelletScripthash + stringToHex("FUEL")
+  );
+  const shipFuel = shipInputFuel?.quantity;
 
-const pellettUtxos = await blockchainProvider.fetchUTxOs(pelletDeployScript.txHash);
-const fuelPolicyid  = pellettUtxos[0].output.scriptHash;
+  const shipInputData = ship.output.plutusData;
+  const shipInputDatum = deserializeDatum(shipInputData!).fields;
 
-const shipUtxo = await blockchainProvider.fetchUTxOs(ship_tx_hash,1);
-const ship = shipUtxo[0];
-    if (!ship.output.plutusData){
-     throw Error ("Ship Datum is Empty");
-    };
+  const shipDatumPosX: number = shipInputDatum[0].int;
+  const shipDatumPosY: number = shipInputDatum[1].int;
+  const shipDatumShipTokenName: string = shipInputDatum[2].bytes;
+  const shipDatumPilotTokenName: string = shipInputDatum[3].bytes;
 
-const shipInputAda = ship.output.amount.find((Asset) =>
-    Asset.unit == "lovelace"
-);
-const shipInputFuel = ship.output.amount.find((Asset) =>
-    Asset.unit == fuelPolicyid + stringToHex("FUEL")
-);
-const shipFuel = shipInputFuel?.quantity;
-
-const shipInputData = ship.output.plutusData;
-const shipInputDatum = deserializeDatum(shipInputData!).fields;
-
-const shipDatumPosX: number = shipInputDatum[0].int;
-const shipDatumPosY: number = shipInputDatum[1].int;
-const shipDatumShipTokenName: string = shipInputDatum[2].bytes;
-const shipDatumPilotTokenName:string = shipInputDatum[3].bytes;
-
-const shipOutputDatum = conStr0([
+  const shipOutputDatum = conStr0([
     integer(Number(shipDatumPosX) + delta_X),
     integer(Number(shipDatumPosY) + delta_Y),
     byteString(shipDatumShipTokenName),
-    byteString(shipDatumPilotTokenName)
-]);
+    byteString(shipDatumPilotTokenName),
+  ]);
 
-console.log(shipOutputDatum)
+  console.log(shipOutputDatum);
 
-//get distance and fuel for distance
-function distance (delta_X: number , delta_Y: number){
+  function distance(delta_X: number, delta_Y: number) {
     return Math.abs(delta_X) + Math.abs(delta_Y);
-};
-function required_fuel (distance:number, fuel_per_step:number){
+  }
+  function required_fuel(distance: number, fuel_per_step: number) {
     return distance * fuel_per_step;
-};
+  }
 
-const movedDistance = distance(delta_X, delta_Y);
-const spentFuel =   required_fuel(movedDistance , fuel_per_step);
-const fuelTokenName = stringToHex("FUEL");
+  const movedDistance = distance(delta_X, delta_Y);
+  const spentFuel = required_fuel(movedDistance, fuel_per_step);
+  const fuelTokenName = stringToHex("FUEL");
 
-//defining assets
-const assetsToSpacetime: Asset[] = [{
-    unit: shipyardPolicyid + shipDatumShipTokenName,
-    quantity: "1"
-},{
-    unit: fuelPolicyid + fuelTokenName,
-    quantity: (Number(shipFuel) - spentFuel).toString()  
-}];
+  const assetsToSpacetime: Asset[] = [
+    {
+      unit: spacetimeScriptHash + shipDatumShipTokenName,
+      quantity: "1",
+    },
+    {
+      unit: pelletScripthash + fuelTokenName,
+      quantity: (Number(shipFuel) - spentFuel).toString(),
+    },
+  ];
 
-const pilotTokenAsset: Asset [] = [{
-    unit: shipyardPolicyid + shipDatumPilotTokenName,
-    quantity: "1"
-}];
+  const pilotTokenAsset: Asset[] = [
+    {
+      unit: spacetimeScriptHash + shipDatumPilotTokenName,
+      quantity: "1",
+    },
+  ];
 
-const moveShipRedeemer = conStr0([
-    integer(delta_X),
-    integer(delta_Y)
-]);
+  const moveShipRedeemer = conStr0([integer(delta_X), integer(delta_Y)]);
 
-console.log(assetsToSpacetime);
-console.log(pilotTokenAsset);
-console.log(spentFuel);
-console.log(ship.output.amount);
+  const burnfuelRedeemer = conStr1([]);
 
-const burnfuelRedeemer = conStr1([]);
+  const txbuilder = new MeshTxBuilder({
+    fetcher: hydraProvider,
+    submitter: hydraProvider,
+    verbose: true,
+  });
+  const utxos = await hydraProvider.fetchUTxOs("5a7bdf5f213bcfcb6369caec434d1506d5802330e0632f15c9acadacbbe0b971",1);
 
-const txbuilder = new MeshTxBuilder({
-    fetcher: maestroprovider,
-    submitter: maestroprovider,
-    verbose: true
-})
-
-const unsignedTx = await txbuilder
+  const unsignedTx = await txbuilder
     .spendingPlutusScriptV3()
-    .txIn(
-        ship.input.txHash,
-        ship.input.outputIndex,
-    )
-    .txInRedeemerValue(moveShipRedeemer,"JSON")
-    .spendingTxInReference(spacetimeDeployScript.txHash,0)
+    .txIn(ship.input.txHash, ship.input.outputIndex)
+    .txInRedeemerValue(moveShipRedeemer, "JSON")
+    .txInScript(spacetimeCbor)
     .txInInlineDatumPresent()
-    
+
     .mintPlutusScriptV3()
-    .mint((-spentFuel).toString(),fuelPolicyid!,fuelTokenName)
-    .mintTxInReference(pelletDeployScript.txHash,0)
-    .mintRedeemerValue(burnfuelRedeemer,"JSON")
-    
-    .txOut(myWallet.getAddresses().baseAddressBech32!,pilotTokenAsset)
-    .txOut(spacetimeAddress,assetsToSpacetime)
-    .txOutInlineDatumValue(shipOutputDatum,"JSON")
-    .invalidBefore(tx_earliest_slot)
-    .invalidHereafter(tx_latest_slot)
-    .txInCollateral(
-        collateral.input.txHash,
-        collateral.input.outputIndex,
-    )
+    .mint((-spentFuel).toString(), pelletScripthash!, fuelTokenName)
+    .mintingScript(pelletCbor)
+    .mintRedeemerValue(burnfuelRedeemer, "JSON")
+
+    .txOut(hydraWallet.getAddresses().baseAddressBech32!, pilotTokenAsset)
+    .txOut(spacetimeScriptAddress, assetsToSpacetime)
+    .txOutInlineDatumValue(shipOutputDatum, "JSON")
+    .txInCollateral("5a7bdf5f213bcfcb6369caec434d1506d5802330e0632f15c9acadacbbe0b971",2)
     .changeAddress(changeAddress)
     .selectUtxosFrom(utxos)
     .setNetwork("preprod")
     .complete();
-  
-const  signedTx = await myWallet.signTx(unsignedTx, true);
-const  moveshipTxhash = await myWallet.submitTx(signedTx);
-return moveshipTxhash;
-};
 
-export {moveShip};
+  const signedTx = await hydraWallet.signTx(unsignedTx);
+  const moveshipTxhash = await hydraWallet.submitTx(signedTx);
+  return moveshipTxhash;
+}
+
+export { moveShip };

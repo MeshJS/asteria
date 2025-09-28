@@ -6,83 +6,50 @@ import {
   deserializeDatum,
   integer,
   MeshTxBuilder,
-  PlutusScript,
   policyId,
   stringToHex,
   UTxO,
 } from "@meshsdk/core";
-import {
-  blockchainProvider,
-  myWallet,
-  readScripRefJson,
-  tx_earliest_slot,
-} from "../../utils.js";
-import { fromScriptRef, resolvePlutusScriptAddress } from "@meshsdk/core-cst";
+import { hydraProvider, hydraWallet } from "../../utils.js";
 import { admintoken, max_asteria_mining } from "../../config.js";
+import {
+  asteriaCbor,
+  asteriaScriptAddress,
+  pelletCbor,
+  pelletScripthash,
+  spacetimeCbor,
+  spacetimeScriptHash,
+} from "../admin/deploy/hydra-deploy.js";
 
-const changeAddress = await myWallet.getChangeAddress();
-const collateral: UTxO = (await myWallet.getCollateral())[0]!;
-const utxos = await myWallet.getUtxos();
+const changeAddress = await hydraWallet.getChangeAddress();
+const collateral: UTxO = (await hydraWallet.getCollateral())[0]!;
+const utxos = await hydraWallet.getUtxos();
 
 async function mineAsteria(ship_tx_hash: string) {
-  const spacetimeDeployScript = await readScripRefJson("spacetimeref");
-  if (!spacetimeDeployScript.txHash) {
-    throw Error("spacetime script-ref not found, deploy spacetime first.");
-  }
-  const pelletDeployScript = await readScripRefJson("pelletref");
-  if (!pelletDeployScript.txHash) {
-    throw Error("pellet script-ref not found, deploy pellet first.");
-  }
-  const asteriaDeployScript = await readScripRefJson("asteriaref");
-  if (!asteriaDeployScript.txHash) {
-    throw Error("asteria script-ref not found, deploy asteria first.");
-  }
-
-  const spacetime_scriptref_utxo = await blockchainProvider.fetchUTxOs(
-    spacetimeDeployScript.txHash
-  );
-  const shipyard_policyId = spacetime_scriptref_utxo[0].output.scriptHash;
-
-  const pellet_scriptref_utxo = await blockchainProvider.fetchUTxOs(
-    pelletDeployScript.txHash
-  );
-  const fuel_policyid = pellet_scriptref_utxo[0].output.scriptHash;
-
-  const asteria_scriptref_utxos = await blockchainProvider.fetchUTxOs(
-    asteriaDeployScript.txHash
-  );
-  const asteria_script_ref = fromScriptRef(
-    asteria_scriptref_utxos[0].output.scriptRef!
-  );
-  const asteria_plutus_script = asteria_script_ref as PlutusScript;
-  const asteria_script_address = resolvePlutusScriptAddress(
-    asteria_plutus_script,
-    0
-  );
-
-  const ship_utxo = await blockchainProvider.fetchUTxOs(ship_tx_hash, 1);
+  await hydraProvider.connect();
+  const ship_utxo = await hydraProvider.fetchUTxOs(ship_tx_hash, 1);
   const ship = ship_utxo[0];
-  if (!ship.output.plutusData) {
+  if (!ship?.output.plutusData) {
     throw Error("ship datum not found");
   }
-  const shipInputFuel = ship.output.amount.find(
-    (Asset) => Asset.unit == fuel_policyid + stringToHex("FUEL")
+  const shipInputFuel = ship?.output.amount.find(
+    (Asset) => Asset.unit == pelletScripthash + stringToHex("FUEL")
   );
 
-  const asteria_utxo = await blockchainProvider.fetchAddressUTxOs(
-    asteria_script_address,
+  const asteria_utxo = await hydraProvider.fetchAddressUTxOs(
+    asteriaScriptAddress,
     admintoken.policyid + admintoken.name
   );
   const asteria = asteria_utxo[0];
-  if (!asteria.output.plutusData) {
+  if (!asteria?.output.plutusData) {
     throw Error(" Asteria datum not found");
   }
-  const rewardAda = asteria.output.amount.find(
+  const rewardAda = asteria?.output.amount.find(
     (Asset) => Asset.unit === "lovelace"
   );
 
   //get input ship datum
-  const shipInputData = ship.output.plutusData;
+  const shipInputData = ship?.output.plutusData;
   const shipInputDatum = deserializeDatum(shipInputData!).fields;
 
   //get datum properties
@@ -107,7 +74,6 @@ async function mineAsteria(ship_tx_hash: string) {
   const shipFuel = shipInputFuel?.quantity;
   const totalReward = rewardAda?.quantity!;
 
-  //mined reward is half total reward
   const minedReward =
     Math.floor(Number(totalReward) * max_asteria_mining) / 100;
 
@@ -123,7 +89,7 @@ async function mineAsteria(ship_tx_hash: string) {
   ];
   const pilotAssets: Asset[] = [
     {
-      unit: shipyard_policyId + ship_datum_pilotTokenName,
+      unit: spacetimeScriptHash + ship_datum_pilotTokenName,
       quantity: "1",
     },
     {
@@ -138,46 +104,45 @@ async function mineAsteria(ship_tx_hash: string) {
   const burnfuelRedeemer = conStr1([]);
 
   const txBuilder = new MeshTxBuilder({
-    fetcher: blockchainProvider,
-    submitter: blockchainProvider,
-    evaluator: blockchainProvider,
+    fetcher: hydraProvider,
+    submitter: hydraProvider,
     verbose: true,
   });
 
   const unsignedTx = await txBuilder
     .spendingPlutusScriptV3()
     .txIn(asteria.input.txHash, asteria.input.outputIndex)
-    .spendingReferenceTxInRedeemerValue(asteriaRedeemer, "JSON")
-    .spendingTxInReference(asteriaDeployScript.txHash, 0)
+    .spendingReferenceTxInRedeemerValue(asteriaRedeemer, "JSON",{mem: 1000000, steps: 500000000})
+    .txInScript(asteriaCbor)
     .txInInlineDatumPresent()
-    .txOut(asteria_script_address, asteria_address_assets)
+    .txOut(asteriaScriptAddress, asteria_address_assets)
     .txOutInlineDatumValue(asteriaOutputDatum, "JSON")
 
     .spendingPlutusScriptV3()
     .txIn(ship.input.txHash, ship.input.outputIndex)
-    .spendingReferenceTxInRedeemerValue(shipRedemmer, "JSON")
-    .spendingTxInReference(spacetimeDeployScript.txHash, 0)
+    .spendingReferenceTxInRedeemerValue(shipRedemmer, "JSON",{mem: 1000000, steps: 500000000})
+    .txInScript(spacetimeCbor)
     .txInInlineDatumPresent()
 
     .mintPlutusScriptV3()
-    .mint("-1", shipyard_policyId!, ship_datum_shipTokenName)
-    .mintTxInReference(spacetimeDeployScript.txHash, 0)
-    .mintRedeemerValue(burnShipRedeemer, "JSON")
+    .mint("-1", spacetimeScriptHash!, ship_datum_shipTokenName)
+    .mintingScript(spacetimeCbor)
+    .mintRedeemerValue(burnShipRedeemer, "JSON",{mem: 1000000, steps: 500000000})
 
     .mintPlutusScriptV3()
-    .mint("-" + shipFuel!, fuel_policyid!, stringToHex("FUEL"))
-    .mintTxInReference(pelletDeployScript.txHash, 0)
-    .mintRedeemerValue(burnfuelRedeemer, "JSON")
+    .mint("-" + shipFuel!, pelletScripthash!, stringToHex("FUEL"))
+    .mintingScript(pelletCbor)
+    .mintRedeemerValue(burnfuelRedeemer, "JSON",{mem: 1000000, steps: 500000000})
 
-    .txOut(myWallet.addresses.baseAddressBech32!, pilotAssets)
-    .txInCollateral(collateral.input.txHash, collateral.input.outputIndex)
+    .txOut(hydraWallet.getAddresses().baseAddressBech32!, pilotAssets)
+    .txInCollateral("0264c2a00407c5c7ac003304714a1fd67e7b93a9c0f49da6b4caa4acae14236b", 3)
     .selectUtxosFrom(utxos)
     .changeAddress(changeAddress)
     .setNetwork("preprod")
     .complete();
 
-  const signedTx = await myWallet.signTx(unsignedTx);
-  const txHash = await myWallet.submitTx(signedTx);
+  const signedTx = await hydraWallet.signTx(unsignedTx);
+  const txHash = await hydraWallet.submitTx(signedTx);
   return txHash;
 }
 export { mineAsteria };

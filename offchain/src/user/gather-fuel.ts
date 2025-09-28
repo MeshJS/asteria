@@ -1,196 +1,171 @@
-import { 
-    Asset, 
-    byteString, 
-    conStr, 
-    conStr0, 
-    deserializeDatum, 
-    integer,   
-    MeshTxBuilder, 
-    PlutusScript, 
-    policyId, 
-    posixTime, 
-    serializePlutusScript, 
-    SLOT_CONFIG_NETWORK, 
-    stringToHex, 
-    unixTimeToEnclosingSlot, 
-    UTxO
+import {
+  Asset,
+  byteString,
+  conStr,
+  conStr0,
+  deserializeDatum,
+  integer,
+  MeshTxBuilder,
+  policyId,
+  stringToHex,
+  UTxO,
 } from "@meshsdk/core";
-import { 
-    blockchainProvider, 
-    myWallet, 
-    readScripRefJson
-} from "../../utils.js";
-import { fromScriptRef} from "@meshsdk/core-cst";
-import { admintoken} from "../../config.js";
+import { hydraProvider, hydraWallet } from "../../utils.js";
+import { admintoken } from "../../config.js";
+import {
+  pelletCbor,
+  pelletScriptAddress,
+  pelletScripthash,
+  spacetimeCbor,
+  spacetimeScriptAddress,
+  spacetimeScriptHash,
+} from "../admin/deploy/hydra-deploy.js";
 
-const changeAddress = await myWallet.getChangeAddress();
-const collateral: UTxO = (await myWallet.getCollateral())[0]!;
-const utxos = await myWallet.getUtxos();
+const changeAddress = await hydraWallet.getChangeAddress();
+const collateral: UTxO = (await hydraWallet.getCollateral())[0]!;
+const utxos = await hydraWallet.getUtxos();
 
 async function gatherFuel(
-    ship_tx_hash: string,
-    pellet_tx_Hash: string,
-    pellet_tx_index: number,
-    gather_amount: number
-){
-const spacetimeDeployScript = await readScripRefJson('spacetimeref');
-if(!spacetimeDeployScript.txHash){
-    throw Error ("spacetime script-ref not found, deploy spacetime first.");
-}; 
-const pelletDeployScript = await readScripRefJson('pelletref');
-if(!pelletDeployScript.txHash){
-throw Error ("pellet script-ref not found, deploy pellet first.");
-};
+  ship_tx_hash: string,
+  pellet_tx_Hash: string,
+  pellet_tx_index: number,
+  gather_amount: number
+) {
+  await hydraProvider.connect();
+  const shipUtxo = await hydraProvider.fetchUTxOs(ship_tx_hash, 1);
+  const pelletUtxo = await hydraProvider.fetchUTxOs(
+    pellet_tx_Hash,
+    pellet_tx_index
+  );
 
-const spacetimeUtxos   =  await blockchainProvider.fetchUTxOs(spacetimeDeployScript.txHash);
-const spacetimeScriptRef = fromScriptRef(spacetimeUtxos[0].output.scriptRef!);
-const spacetimePlutusScript = spacetimeScriptRef as  PlutusScript;
-const spacetimeAddress = serializePlutusScript(spacetimePlutusScript).address;
-const shipYardPolicyId = spacetimeUtxos[0].output.scriptHash;
+  const ship = shipUtxo[0];
+  if (!ship?.output.plutusData) {
+    throw Error("Ship datum is empty");
+  }
+  const pellet = pelletUtxo[0];
+  if (!pellet?.output.plutusData) {
+    throw Error("Pellet Datum is Empty");
+  }
 
-const pelletUtxos = await blockchainProvider.fetchUTxOs(pelletDeployScript.txHash)
-const pelletScriptRef = fromScriptRef(pelletUtxos[0].output.scriptRef!);
-const pelletPlutusScript = pelletScriptRef as PlutusScript
-const pelletAddress = serializePlutusScript(pelletPlutusScript).address;
-const fuelPolicyId = pelletUtxos[0].output.scriptHash;
+  const shipInputAda = ship.output.amount.find(
+    (asset) => asset.unit === "lovelace"
+  );
+  console.log("ship input ada", shipInputAda);
+  const fueltokenUnit = pelletScripthash + stringToHex("FUEL");
 
-const shipUtxo  = await blockchainProvider.fetchUTxOs(ship_tx_hash,1);
-const pelletUtxo = await blockchainProvider.fetchUTxOs(pellet_tx_Hash, pellet_tx_index);
+  const shipInputFuel = ship.output.amount.find(
+    (asset) => asset.unit === fueltokenUnit
+  );
 
-const ship = shipUtxo[0];
-    if(!ship.output.plutusData){
-        throw Error("Ship datum is empty");
-    };
-const pellet = pelletUtxo[0];
-     if (!pellet.output.plutusData){
-        throw Error("Pellet Datum is Empty")
-    };
+  const pelletInputFuel = pellet.output.amount.find(
+    (asset) => asset.unit === fueltokenUnit
+  );
 
-const shipInputAda = ship.output.amount.find((asset) =>
-    asset.unit === "lovelace"
-);
-console.log('ship input ada',shipInputAda)
-const fueltokenUnit = fuelPolicyId + stringToHex("FUEL");
+  const inputFuel = Number(pelletInputFuel?.quantity);
+  if (gather_amount > inputFuel - 30) {
+    throw new Error("Gather amount must be at least 30 less than input fuel");
+  }
 
-const shipInputFuel = ship.output.amount.find((asset) => 
-    asset.unit === fueltokenUnit);
+  const pellet_fuel = Number(pelletInputFuel?.quantity);
+  console.log("gather amount", gather_amount);
+  const shipInputData = ship.output.plutusData;
+  const shipInputDatum = deserializeDatum(shipInputData).fields;
 
-const pelletInputAda = pellet.output.amount.find((Asset =>
-    Asset.unit === "lovelace"
-));
-console.log('pellet input ada',pelletInputAda)
-const pelletInputFuel = pellet.output.amount.find((asset) => 
-    asset.unit === fueltokenUnit);
+  const ShipPosX: number = shipInputDatum[0].int;
+  const shipPoxY: number = shipInputDatum[1].int;
+  const shipTokenName: string = shipInputDatum[2].bytes;
+  const pilotTokenName: string = shipInputDatum[3].bytes;
 
-console.log("Ship : ", ship.output.amount)
-console.log("Pellet : ", pellet.output.amount)
-
-
-const pellet_fuel = Number(pelletInputFuel?.quantity)
-console.log('gather amount', gather_amount)
-const shipInputData = ship.output.plutusData;
-const shipInputDatum = deserializeDatum(shipInputData).fields;
-
-const ShipPosX:number = shipInputDatum[0].int;
-const shipPoxY: number = shipInputDatum[1].int;
-const shipTokenName: string = shipInputDatum[2].bytes;
-const pilotTokenName: string= shipInputDatum[3].bytes;
-
-const shipOutDatum = conStr0([
+  const shipOutDatum = conStr0([
     integer(ShipPosX),
     integer(shipPoxY),
     byteString(shipTokenName),
-    byteString(pilotTokenName)
-]);
+    byteString(pilotTokenName),
+  ]);
 
-//get pelletInput Datum
-const pelletInputData = pellet.output.plutusData;
-const pelletInputDatum = deserializeDatum(pelletInputData).fields;
+  const pelletInputData = pellet.output.plutusData;
+  const pelletInputDatum = deserializeDatum(pelletInputData).fields;
 
-//get pelletDatum properties
-const pelletPosX: number = pelletInputDatum[0].int;
-const pelletPosY: number = pelletInputDatum[1].int;
-const pelletInputShipyardPolicy: string = pelletInputDatum[2].bytes;
+  const pelletPosX: number = pelletInputDatum[0].int;
+  const pelletPosY: number = pelletInputDatum[1].int;
+  const pelletInputShipyardPolicy: string = pelletInputDatum[2].bytes;
 
-//pellet output Datum
-const pelletOuputDatum = conStr0([
+  const pelletOuputDatum = conStr0([
     integer(pelletPosX),
     integer(pelletPosY),
-    policyId(pelletInputShipyardPolicy)
-]);
+    policyId(pelletInputShipyardPolicy),
+  ]);
 
-const shipFuel = shipInputFuel?.quantity;
-console.log('ship input ada',shipInputAda);
-const spacetimeOutputAssets : Asset[] = [{
-    unit: shipInputAda?.unit!,
-    quantity: shipInputAda?.quantity!
-},{
-    unit: shipYardPolicyId + shipTokenName,
-    quantity: "1"
-},{
-    unit: pelletInputFuel?.unit!,
-    quantity:(Number(shipFuel!) + gather_amount).toString()
-}];
+  const shipFuel = shipInputFuel?.quantity;
+  console.log("ship input ada", shipInputAda);
+  const spacetimeOutputAssets: Asset[] = [
+    {
+      unit: shipInputAda?.unit!,
+      quantity: shipInputAda?.quantity!,
+    },
+    {
+      unit: spacetimeScriptHash + shipTokenName,
+      quantity: "1",
+    },
+    {
+      unit: pelletInputFuel?.unit!,
+      quantity: (Number(shipFuel!) + gather_amount).toString(),
+    },
+  ];
 
-const pelletOutputAssets : Asset[] = [{
-    unit: admintoken.policyid + admintoken.name,
-    quantity: "1"
-},{
-    unit: pelletInputFuel?.unit!,
-    quantity: (Number(pellet_fuel) - gather_amount).toString()
-}];
+  const pelletOutputAssets: Asset[] = [
+    {
+      unit: admintoken.policyid + admintoken.name,
+      quantity: "1",
+    },
+    {
+      unit: pelletInputFuel?.unit!,
+      quantity: (Number(pellet_fuel) - gather_amount).toString(),
+    },
+  ];
 
-const pilot_token_asset: Asset[] = [{
-    unit: shipYardPolicyId + pilotTokenName,
-    quantity: "1"
-}];
+  const pilot_token_asset: Asset[] = [
+    {
+      unit: spacetimeScriptHash + pilotTokenName,
+      quantity: "1",
+    },
+  ];
 
-const shipRedeemer = conStr(1, [integer(gather_amount)]);
-const pelletRedemer = conStr0([integer(gather_amount)]);
+  const shipRedeemer = conStr(1, [integer(gather_amount)]);
+  const pelletRedemer = conStr0([integer(gather_amount)]);
 
-const txBuilder = new MeshTxBuilder({
-    fetcher: blockchainProvider,
-    submitter: blockchainProvider,
-    evaluator: blockchainProvider,
-    verbose: true
-});
+  const txBuilder = new MeshTxBuilder({
+    fetcher: hydraProvider,
+    submitter: hydraProvider,
+    verbose: true,
+  });
 
-const unsignedTx = await txBuilder
-.spendingPlutusScriptV3()
-.txIn(
-    ship.input.txHash,
-    ship.input.outputIndex
-)
-.txInRedeemerValue(shipRedeemer,"JSON")
-.spendingTxInReference(spacetimeDeployScript.txHash,0)
-.txInInlineDatumPresent()
-.txOut(pelletAddress,pelletOutputAssets)
-.txOutInlineDatumValue(pelletOuputDatum,"JSON")
+  const unsignedTx = await txBuilder
+    .spendingPlutusScriptV3()
+    .txIn(ship.input.txHash, ship.input.outputIndex)
+    .txInRedeemerValue(shipRedeemer, "JSON")
+    .txInScript(spacetimeCbor)
+    .txInInlineDatumPresent()
+    .txOut(pelletScriptAddress, pelletOutputAssets)
+    .txOutInlineDatumValue(pelletOuputDatum, "JSON")
 
-.spendingPlutusScriptV3()
-.txIn(
-    pellet.input.txHash,
-    pellet.input.outputIndex
-)
-.txInRedeemerValue(pelletRedemer, "JSON")
-.spendingTxInReference(pelletDeployScript.txHash,0)
-.txInInlineDatumPresent()
-.txOut(spacetimeAddress,spacetimeOutputAssets)
-.txOutInlineDatumValue(shipOutDatum,"JSON")
+    .spendingPlutusScriptV3()
+    .txIn(pellet.input.txHash, pellet.input.outputIndex)
+    .txInRedeemerValue(pelletRedemer, "JSON")
+    .txInScript(pelletCbor)
+    .txInInlineDatumPresent()
+    .txOut(spacetimeScriptAddress, spacetimeOutputAssets)
+    .txOutInlineDatumValue(shipOutDatum, "JSON")
 
+    .txOut(hydraWallet.getAddresses().baseAddressBech32!, pilot_token_asset)
+    .txInCollateral("5a7bdf5f213bcfcb6369caec434d1506d5802330e0632f15c9acadacbbe0b971",2)
+    .selectUtxosFrom(utxos)
+    .changeAddress(changeAddress)
+    .setNetwork("preprod")
+    .complete();
 
-.txOut(myWallet.addresses.baseAddressBech32!, pilot_token_asset) 
-.txInCollateral(
-    collateral.input.txHash,
-    collateral.input.outputIndex
-)
-.selectUtxosFrom(utxos)
-.changeAddress(changeAddress)
-.setNetwork("preprod")
-.complete();
-
-const signedTx = await myWallet.signTx(unsignedTx);
-const txHash = await myWallet.submitTx(signedTx);
-return txHash;
-};
-export {gatherFuel};
+  const signedTx = await hydraWallet.signTx(unsignedTx);
+  const txHash = await hydraWallet.submitTx(signedTx);
+  return txHash;
+}
+export { gatherFuel };
