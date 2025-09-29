@@ -7,17 +7,19 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "tsc && npm run copy-assets",
+    "build": "tsup && npm run copy-assets",
     "copy-assets": "copyfiles \"backend/**/*.{json,csv}\" \"offchain/**/*.{json,csv}\" dist",
     "dev": "concurrently \"npm --prefix frontend run dev\" \"tsx -r ./load-env.js backend/index.ts\"",
     "start": "node -r ./load-env.js dist/offchain/index.js",
     "start:backend": "tsx -r ./load-env.js backend/index.ts",
-    "start:offchain": "tsx -r ./load-env.js offchain/index.ts"
+    "start:offchain": "tsx -r ./load-env.js offchain/index.ts",
+    "deploy:backend": "cd backend && vercel --prod",
+    "deploy:frontend": "cd frontend && vercel --prod",
+    "deploy:all": "npm run deploy:backend && npm run deploy:frontend"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
     "copyfiles": "^2.4.1",
-    "nodemon": "^3.1.7",
     "tsup": "^7.2.0",
     "tsx": "^4.20.5",
     "turbo": "^1.12.0",
@@ -29,6 +31,7 @@
   },
   "dependencies": {
     "@meshsdk/core": "^1.9.0-beta.73",
-    "@meshsdk/core-cst": "^1.9.0-beta.74"
+    "@meshsdk/core-cst": "^1.9.0-beta.74",
+    "@meshsdk/hydra": "^1.9.0-beta.77"
   }
 }

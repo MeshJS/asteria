@@ -31,5 +31,3 @@ export {
   initial_fuel,
   min_asteria_distance,
 };
-
-const asteria = "c20d87a573056cabe4d64a832d6278578a60ec8964f6ba2c7b2bf9a0800ae8b8";
