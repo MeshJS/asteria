@@ -1,13 +1,16 @@
 import { Server, Socket } from "socket.io";
 import { createServer } from "http";
 import express from "express";
-import { createShip } from "../offchain";
-import { gatherFuel } from "../offchain";
-import { mineAsteria } from "../offchain";
-import { moveShip } from "../offchain";
-import { quit } from "../offchain";
+import {
+  createShip,
+  gatherFuel,
+  mineAsteria,
+  moveShip,
+  quit,
+} from "../offchain";
 import { readPelletsCsvFile } from "../offchain/src/admin/pellet/utils.js";
 import { HydraProvider } from "@meshsdk/hydra";
+import { blockchainProvider } from "../offchain/utils";
 
 interface Ship {
   id: number;
@@ -40,23 +43,37 @@ const hydraProvider = new HydraProvider({
   url: process.env.HYDRA_URL ?? "http://localhost:4001",
 });
 
-const gameState: GameState = {
-  ships: {},
-  pellets: [],
-};
-
+const gameState: GameState = { ships: {}, pellets: [] };
 const userShipTxHashes: Record<string, Record<number, string>> = {};
 
 const pelletFromCsv = await readPelletsCsvFile();
-gameState.pellets = pelletFromCsv.map((pellet, index) => ({
-  id: index,
-  x: pellet.posX,
-  y: pellet.posY,
-  fuel: parseInt(pellet.fuel, 10),
+gameState.pellets = pelletFromCsv.map((p, i) => ({
+  id: i,
+  x: p.posX,
+  y: p.posY,
+  fuel: parseInt(p.fuel, 10),
 }));
 
+function getShipOwner(
+  id: number
+): { username: string; ship: Ship; index: number } | null {
+  for (const username in gameState.ships) {
+    const index = gameState.ships[username].findIndex((s) => s.id === id);
+    if (index !== -1)
+      return { username, ship: { ...gameState.ships[username][index] }, index };
+  }
+  return null;
+}
+
+function isValidTxHash(txHash: string | undefined): txHash is string {
+  return typeof txHash === "string" && txHash.length >= 10;
+}
+
 io.on("connection", (socket: Socket) => {
+  console.log("Client connected:", socket.id);
+
   socket.on("request-pellets", () => {
+    console.log(`Sending ${gameState.pellets.length} pellets`);
     socket.emit("pellets-coordinates", {
       pelletsCoordinates: gameState.pellets,
     });
@@ -64,160 +81,129 @@ io.on("connection", (socket: Socket) => {
 
   socket.on("hydra-url", (data: { hydraUrl: string }) => {
     socket.data.hydraUrl = data.hydraUrl;
+    console.log(`Hydra URL set: ${data.hydraUrl}`);
   });
 
-  socket.on(
-    "initial-shipCoordinates",
-    async (data: { shipProperty: { username: string; ships: Ship[] } }) => {
-      const { username, ships } = data.shipProperty;
+  socket.on("initial-shipCoordinates", async ({ shipProperty }) => {
+    const { username, ships } = shipProperty;
 
-      if (!Array.isArray(ships)) {
-        socket.emit("error", { message: "Ship data is not an array" });
-        return;
-      }
-
-      try {
-        userShipTxHashes[username] = userShipTxHashes[username] || {};
-        for (const ship of ships) {
-          const txHash = await createShip(ship.x, ship.y);
-          if (!txHash) {
-            throw new Error(`Failed to create ship at (${ship.x}, ${ship.y})`);
-          }
-          userShipTxHashes[username][ship.id] = txHash;
-        }
-
-        gameState.ships[username] = ships;
-        io.emit("createship-coordinates", { coordinatesArray: ships });
-      } catch (err) {
-        socket.emit("error", { message: "Failed to initialize ships" });
-      }
+    if (!Array.isArray(ships)) {
+      return socket.emit("error", { message: "Ship data must be an array" });
     }
-  );
 
-  socket.on(
-    "ship-moved",
-    async (data: { id: number; dx: number; dy: number }) => {
-      const { id, dx, dy } = data;
+    try {
+      userShipTxHashes[username] = userShipTxHashes[username] || {};
 
-      try {
-        let username: string | undefined;
-        let ship: Ship | undefined;
-        let shipIndex: number = -1;
+      for (const ship of ships) {
+        console.log(`Creating ship for ${username} at (${ship.x},${ship.y})`);
+        const txHash = await createShip(ship.x, ship.y);
+        if (!isValidTxHash(txHash)) throw new Error("Invalid txHash returned");
 
-        // Find the ship and its owner
-        for (const user in gameState.ships) {
-          const userShips = gameState.ships[user];
-          shipIndex = userShips.findIndex((s) => s.id === id);
-          if (shipIndex !== -1) {
-            username = user;
-            ship = { ...userShips[shipIndex] };
-            break;
-          }
-        }
+        userShipTxHashes[username][ship.id] = txHash;
+      }
 
-        if (!username || !ship) {
-          socket.emit("error", { message: `Ship not found for ID ${id}` });
-          return;
-        }
+      gameState.ships[username] = ships;
+      io.emit("createship-coordinates", { coordinatesArray: ships });
+    } catch (err: any) {
+      console.error(`Ship creation failed for ${username}:`, err);
+      socket.emit("error", { message: `Ship creation failed: ${err.message}` });
+    }
+  });
 
-        const shipTxHash = userShipTxHashes[username]?.[id];
-        if (!shipTxHash) {
-          socket.emit("error", {
-            message: `No transaction hash for ship ${id}`,
-          });
-          return;
-        }
+  socket.on("ship-moved", async ({ id, dx, dy }) => {
+    try {
+      console.log(`Ship ${id} moving dx=${dx}, dy=${dy}`);
 
-        // Calculate new position within grid bounds
-        const newX = Math.max(-50, Math.min(50, ship.x + dx));
-        const newY = Math.max(-50, Math.min(50, ship.y + dy));
+      const owner = getShipOwner(id);
+      if (!owner)
+        return socket.emit("error", { message: `Ship ${id} not found` });
 
-        if (newX === ship.x && newY === ship.y) {
-          return; // No movement needed
-        }
-
-        // Update ship position
-        ship.x = newX;
-        ship.y = newY;
-        gameState.ships[username][shipIndex] = ship;
-
-        // Move ship on blockchain
-        console.log(
-          `Moving ship ${id} for ${username}: dx=${dx}, dy=${dy}, txHash=${shipTxHash}`
-        );
-        const moveTxHash = await moveShip(dx, dy, shipTxHash);
-        if (!moveTxHash) {
-          socket.emit("error", { message: `Failed to move ship ${id}` });
-          return;
-        }
-        userShipTxHashes[username][id] = moveTxHash;
-        io.emit("ship-moved", { ship });
-
-        // Check for pellet collection
-        const pelletIndex = gameState.pellets.findIndex(
-          (p) => p.x === ship.x && p.y === ship.y
-        );
-        if (pelletIndex !== -1) {
-          const collectedPellet = gameState.pellets.splice(pelletIndex, 1)[0];
-          const gatherAmount = collectedPellet.fuel - 30;
-          console.log(
-            `Collecting pellet ${collectedPellet.id}: fuel=${collectedPellet.fuel}`
-          );
-          const fuelTxHash = await gatherFuel(
-            moveTxHash,
-            "f38b3c7b510b3f13a2c035809b212061759e7c1ccbb1f4556d3b456044773a93",
-            collectedPellet.id,
-            gatherAmount
-          );
-          if (fuelTxHash) {
-            userShipTxHashes[username][id] = fuelTxHash;
-            io.emit("pellet-collected", { pelletId: collectedPellet.id });
-          } else {
-            socket.emit("error", {
-              message: `Failed to gather fuel for pellet ${collectedPellet.id}`,
-            });
-          }
-        }
-
-        // Check for Asteria mining
-        if (ship.x === 0 && ship.y === 0) {
-          console.log(`Mining Asteria for ship ${id}`);
-          const mineTxHash = await mineAsteria(moveTxHash);
-          if (mineTxHash) {
-            userShipTxHashes[username][id] = mineTxHash;
-            io.emit("asteria-mined", { username });
-            gameState.ships = {};
-            gameState.pellets = [];
-            io.emit("game-cleared", {
-              message: "Game reset due to Asteria mined",
-            });
-          } else {
-            socket.emit("error", { message: "Failed to mine Asteria" });
-          }
-        }
-      } catch (err) {
-        console.error(`Error processing ship movement for ID ${id}:`, err);
-        socket.emit("error", {
-          message: `Failed to process ship movement: ${err.message}`,
+      const { username, ship, index } = owner;
+      const prevTx = userShipTxHashes[username]?.[id];
+      if (!isValidTxHash(prevTx)) {
+        return socket.emit("error", {
+          message: `Invalid txHash for ship ${id}`,
         });
       }
+
+      if (
+        !Number.isFinite(dx) ||
+        !Number.isFinite(dy) ||
+        Math.abs(dx) > 1 ||
+        Math.abs(dy) > 1
+      ) {
+        return socket.emit("error", {
+          message: `Invalid move values dx=${dx}, dy=${dy}`,
+        });
+      }
+
+      const newX = Math.max(-50, Math.min(50, ship.x + dx));
+      const newY = Math.max(-50, Math.min(50, ship.y + dy));
+      if (newX === ship.x && newY === ship.y) return;
+
+      ship.x = newX;
+      ship.y = newY;
+      gameState.ships[username][index] = ship;
+
+      const moveTx = await moveShip(dx, dy, prevTx);
+      if (!isValidTxHash(moveTx))
+        throw new Error("moveShip returned invalid txHash");
+
+      userShipTxHashes[username][id] = moveTx;
+      io.emit("ship-moved", { ship });
+
+      const pelletIdx = gameState.pellets.findIndex(
+        (p) => p.x === ship.x && p.y === ship.y
+      );
+      if (pelletIdx !== -1) {
+        const pellet = gameState.pellets.splice(pelletIdx, 1)[0];
+        const fuelTx = await gatherFuel(
+          pellet.fuel.toString(),
+          moveTx,
+          20,
+          pellet.id
+        );
+
+        if (isValidTxHash(fuelTx)) {
+          userShipTxHashes[username][id] = fuelTx;
+          io.emit("pellet-collected", { pelletId: pellet.id });
+        } else {
+          socket.emit("error", {
+            message: `Failed to gather fuel for pellet ${pellet.id}`,
+          });
+        }
+      }
+
+      if (ship.x === 0 && ship.y === 0) {
+        const mineTx = await mineAsteria(moveTx);
+        if (isValidTxHash(mineTx)) {
+          userShipTxHashes[username][id] = mineTx;
+          io.emit("asteria-mined", { username });
+
+          gameState.ships = {};
+          gameState.pellets = [];
+          io.emit("game-cleared", { message: "Game reset: Asteria mined" });
+        } else {
+          socket.emit("error", { message: "Failed to mine Asteria" });
+        }
+      }
+    } catch (err: any) {
+      console.error(`Error moving ship ${id}:`, err);
+      socket.emit("error", { message: `Ship move failed: ${err.message}` });
     }
-  );
+  });
 
-  socket.on("quit", async (data: { username: string }) => {
-    const { username } = data;
-
-    if (!gameState.ships[username] || !userShipTxHashes[username]) {
-      socket.emit("error", { message: "No active game for user" });
-      return;
+  socket.on("quit", async ({ username }) => {
+    if (!gameState.ships[username]) {
+      return socket.emit("error", { message: "No active game for this user" });
     }
 
     try {
       for (const shipId in userShipTxHashes[username]) {
-        const shipTxHash = userShipTxHashes[username][shipId];
-        const quitTxHash = await quit(shipTxHash);
-        if (!quitTxHash) {
-          socket.emit("error", { message: `Failed to quit ship ${shipId}` });
+        const txHash = userShipTxHashes[username][shipId];
+        const quitTx = await quit(txHash);
+        if (!isValidTxHash(quitTx)) {
+          socket.emit("error", { message: `Quit failed for ship ${shipId}` });
         }
       }
 
@@ -225,12 +211,11 @@ io.on("connection", (socket: Socket) => {
       delete gameState.ships[username];
       io.emit("game-cleared", {
         username,
-        message: `${username} has quit the game`,
+        message: `${username} quit the game`,
       });
-    } catch (err) {
-      socket.emit("error", {
-        message: `Failed to process quit for ${username}`,
-      });
+    } catch (err: any) {
+      console.error(`Quit error for ${username}:`, err);
+      socket.emit("error", { message: `Quit failed: ${err.message}` });
     }
   });
 
