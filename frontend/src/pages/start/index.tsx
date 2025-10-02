@@ -37,7 +37,8 @@ const GameStart: React.FC = () => {
         setShowSetup(false);
       }
     }
-
+    
+    socket.emit("request-pellets");
     socket.on("pellets-coordinates", (data: { pelletsCoordinates: Pellet[] }) => {
       setPellets(data.pelletsCoordinates || []);
     });
