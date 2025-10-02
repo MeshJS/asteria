@@ -29,15 +29,24 @@ const GameSetup: React.FC = () => {
   useEffect(() => {
     socket.emit("request-pellets");
 
-    socket.on("pellets-coordinates", (data: { pelletsCoordinates: Pellet[] }) => {
-      console.log("Received pellets-coordinates:", data.pelletsCoordinates.length);
-      setPendingPellets(data.pelletsCoordinates || []);
-    });
+    socket.on(
+      "pellets-coordinates",
+      (data: { pelletsCoordinates: Pellet[] }) => {
+        console.log(
+          "Received pellets-coordinates:",
+          data.pelletsCoordinates.length
+        );
+        setPendingPellets(data.pelletsCoordinates || []);
+      }
+    );
 
-    socket.on("createship-coordinates", (data: { coordinatesArray: Ship[] }) => {
-      console.log("Received createship-coordinates:", data.coordinatesArray);
-      setPendingShips(data.coordinatesArray);
-    });
+    socket.on(
+      "createship-coordinates",
+      (data: { coordinatesArray: Ship[] }) => {
+        console.log("Received createship-coordinates:", data.coordinatesArray);
+        setPendingShips(data.coordinatesArray);
+      }
+    );
 
     socket.on("error", (data: { message: string }) => {
       console.error("WebSocket error:", data.message);
@@ -48,7 +57,7 @@ const GameSetup: React.FC = () => {
     return () => {
       socket.off("pellets-coordinates");
       socket.off("createship-coordinates");
-      socket.off("error")
+      socket.off("error");
     };
   }, [socket]);
 
@@ -136,8 +145,7 @@ const GameSetup: React.FC = () => {
           <img src="/fuel.svg" alt="pellet" className="w-6 h-6" />
           <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1 hidden group-hover:block bg-black bg-opacity-70 text-white text-xs rounded-md border border-gray-300 px-2 py-1 whitespace-nowrap z-50">
             ID: {node.id}, Fuel: {node.fuel}
-            <br />
-            ({node.x}, {node.y})
+            <br />({node.x}, {node.y})
           </div>
         </div>
       ))}
@@ -165,7 +173,10 @@ const GameSetup: React.FC = () => {
                 {username || "Player"}
               </div>
             </div>
-            <form onSubmit={handleCreateGame} className="flex items-center gap-4">
+            <form
+              onSubmit={handleCreateGame}
+              className="flex items-center gap-4"
+            >
               <input
                 type="url"
                 placeholder="Hydra API URL"
