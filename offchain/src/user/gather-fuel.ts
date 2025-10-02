@@ -21,10 +21,6 @@ import {
   spacetimeScriptHash,
 } from "../admin/deploy/hydra-deploy.js";
 
-const changeAddress = await hydraWallet.getChangeAddress();
-const collateral: UTxO = (await hydraWallet.getCollateral())[0]!;
-const utxos = await hydraWallet.getUtxos();
-
 async function gatherFuel(
   ship_tx_hash: string,
   pellet_tx_Hash: string,
@@ -32,6 +28,9 @@ async function gatherFuel(
   gather_amount: number
 ) {
   await hydraProvider.connect();
+  const changeAddress = await hydraWallet.getChangeAddress();
+  const collateral: UTxO = (await hydraWallet.getCollateral())[0]!;
+  const utxos = await hydraWallet.getUtxos();
   const shipUtxo = await hydraProvider.fetchUTxOs(ship_tx_hash, 1);
   const pelletUtxo = await hydraProvider.fetchUTxOs(
     pellet_tx_Hash,
@@ -158,7 +157,7 @@ async function gatherFuel(
     .txOutInlineDatumValue(shipOutDatum, "JSON")
 
     .txOut(hydraWallet.getAddresses().baseAddressBech32!, pilot_token_asset)
-    .txInCollateral("5a7bdf5f213bcfcb6369caec434d1506d5802330e0632f15c9acadacbbe0b971",2)
+    .txInCollateral(collateral.input.txHash, collateral.input.outputIndex)
     .selectUtxosFrom(utxos)
     .changeAddress(changeAddress)
     .setNetwork("preprod")

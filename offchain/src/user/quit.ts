@@ -7,14 +7,18 @@ import {
   stringToHex,
   UTxO,
 } from "@meshsdk/core";
-import { pelletCbor, pelletScripthash, spacetimeCbor, spacetimeScriptHash } from "../admin/deploy/hydra-deploy.js";
-
-const changeAddress = await hydraWallet.getChangeAddress();
-const collateral: UTxO = (await hydraWallet.getCollateral())[0]!;
-const utxos = await hydraWallet.getUtxos();
+import {
+  pelletCbor,
+  pelletScripthash,
+  spacetimeCbor,
+  spacetimeScriptHash,
+} from "../admin/deploy/hydra-deploy.js";
 
 async function quit(ship_tx_hash: string) {
-
+  hydraProvider.connect();
+  const changeAddress = await hydraWallet.getChangeAddress();
+  const collateral: UTxO = (await hydraWallet.getCollateral())[0]!;
+  const utxos = await hydraWallet.getUtxos();
   const fuelTokenName = stringToHex("FUEL");
 
   const shipUtxos = await hydraProvider.fetchUTxOs(ship_tx_hash, 1);
@@ -71,7 +75,7 @@ async function quit(ship_tx_hash: string) {
         quantity: "1",
       },
     ])
-    .txInCollateral("0264c2a00407c5c7ac003304714a1fd67e7b93a9c0f49da6b4caa4acae14236b", 3)
+    .txInCollateral(collateral.input.txHash, collateral.input.outputIndex)
     .changeAddress(changeAddress)
     .selectUtxosFrom(utxos)
     .setNetwork("preprod")
