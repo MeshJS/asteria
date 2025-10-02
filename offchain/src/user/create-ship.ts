@@ -22,12 +22,11 @@ import {
   spacetimeScriptHash,
 } from "../admin/deploy/hydra-deploy.js";
 
-const changeAddress = await hydraWallet.getChangeAddress();
-const collateral: UTxO = (await hydraWallet.getCollateral())[20]!;
-const utxos = await hydraWallet.getUtxos();
-
 async function createShip(posX: number, posY: number) {
   await hydraProvider.connect();
+  const changeAddress = await hydraWallet.getChangeAddress();
+  const collateral: UTxO = (await hydraWallet.getCollateral())[20]!;
+  const utxos = await hydraWallet.getUtxos();
   const asteriaInputUtxos = await hydraProvider.fetchAddressUTxOs(
     asteriaScriptAddress,
     admintoken.policyid + admintoken.name
@@ -90,7 +89,7 @@ async function createShip(posX: number, posY: number) {
       quantity: (
         Number(asteriaInputAda?.quantity) + ship_mint_lovelace_fee
       ).toString(),
-    }
+    },
   ];
   const pilotTokenAsset: Asset[] = [
     {
@@ -117,7 +116,10 @@ async function createShip(posX: number, posY: number) {
   const unsignedTx = await txBuilder
     .spendingPlutusScriptV3()
     .txIn(asteria.input.txHash, asteria.input.outputIndex)
-    .txInRedeemerValue(addNewshipRedeemer, "JSON",{mem: 1000000, steps: 500000000})  //manually evaluate the transaction 
+    .txInRedeemerValue(addNewshipRedeemer, "JSON", {
+      mem: 1000000,
+      steps: 500000000,
+    }) //manually evaluate the transaction
     .txInScript(asteriaCbor)
     .txInInlineDatumPresent()
     .txOut(asteriaScriptAddress, totalRewardsAsset)
@@ -125,21 +127,30 @@ async function createShip(posX: number, posY: number) {
     .mintPlutusScriptV3()
     .mint("1", spacetimeScriptHash!, shipTokenName)
     .mintingScript(spacetimeCbor)
-    .mintRedeemerValue(mintShipRedeemer, "JSON",{mem: 1000000, steps: 500000000})
+    .mintRedeemerValue(mintShipRedeemer, "JSON", {
+      mem: 1000000,
+      steps: 500000000,
+    })
     .mintPlutusScriptV3()
     .mint("1", spacetimeScriptHash!, pilotTokenName)
     .mintingScript(spacetimeCbor)
-    .mintRedeemerValue(mintShipRedeemer, "JSON",{mem: 1000000, steps: 500000000})
+    .mintRedeemerValue(mintShipRedeemer, "JSON", {
+      mem: 1000000,
+      steps: 500000000,
+    })
     .mintPlutusScriptV3()
     .mint(initial_fuel, pelletScripthash!, fuelTokenName)
     .mintingScript(pelletCbor)
-    .mintRedeemerValue(mintFuelRedeemer, "JSON",{mem: 1000000, steps: 500000000})
+    .mintRedeemerValue(mintFuelRedeemer, "JSON", {
+      mem: 1000000,
+      steps: 500000000,
+    })
     .setFee("6000000")
 
     .txOut(spacetimeScriptAddress, assetToSpacetimeAddress)
     .txOutInlineDatumValue(shipDatum, "JSON")
     .txOut(hydraWallet.getAddresses().baseAddressBech32!, pilotTokenAsset)
-    .txInCollateral(collateral.input.txHash,collateral.input.outputIndex)
+    .txInCollateral(collateral.input.txHash, collateral.input.outputIndex)
     .selectUtxosFrom(utxos)
     .changeAddress(changeAddress)
     .setNetwork("preprod")

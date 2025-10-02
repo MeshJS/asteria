@@ -38,17 +38,26 @@ const GameStart: React.FC = () => {
       }
     }
 
-    socket.on("pellets-coordinates", (data: { pelletsCoordinates: Pellet[] }) => {
-      setPellets(data.pelletsCoordinates || []);
-    });
+    socket.emit("request-pellets");
+    socket.on(
+      "pellets-coordinates",
+      (data: { pelletsCoordinates: Pellet[] }) => {
+        setPellets(data.pelletsCoordinates || []);
+      }
+    );
 
-    socket.on("createship-coordinates", (data: { coordinatesArray: Ship[] }) => {
-      setShips(data.coordinatesArray);
-      setShowSetup(false);
-    });
+    socket.on(
+      "createship-coordinates",
+      (data: { coordinatesArray: Ship[] }) => {
+        setShips(data.coordinatesArray);
+        setShowSetup(false);
+      }
+    );
 
     socket.on("ship-moved", (data: { ship: Ship }) => {
-      setShips((prev) => prev.map((s) => (s.id === data.ship.id ? data.ship : s)));
+      setShips((prev) =>
+        prev.map((s) => (s.id === data.ship.id ? data.ship : s))
+      );
     });
 
     socket.on("pellet-collected", (data: { pelletId: number }) => {
@@ -83,7 +92,11 @@ const GameStart: React.FC = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (selectedIndex === null || selectedIndex < 0 || selectedIndex >= ships.length) {
+      if (
+        selectedIndex === null ||
+        selectedIndex < 0 ||
+        selectedIndex >= ships.length
+      ) {
         return;
       }
 
@@ -123,7 +136,9 @@ const GameStart: React.FC = () => {
   };
 
   const handleQuit = () => {
-    const storedUsername = JSON.parse(localStorage.getItem("initialGameState") || "{}").username || "currentUser";
+    const storedUsername =
+      JSON.parse(localStorage.getItem("initialGameState") || "{}").username ||
+      "currentUser";
     socket.emit("quit", { username: storedUsername });
     localStorage.removeItem("initialGameState");
   };
@@ -156,8 +171,7 @@ const GameStart: React.FC = () => {
           <img src="/fuel.svg" alt="pellet" className="w-6 h-6" />
           <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1 hidden group-hover:block bg-black bg-opacity-70 text-white text-xs rounded-md border border-gray-300 px-2 py-1 whitespace-nowrap z-50">
             ID: {node.id}, Fuel: {node.fuel}
-            <br />
-            ({node.x}, {node.y})
+            <br />({node.x}, {node.y})
           </div>
         </div>
       ))}
@@ -196,8 +210,7 @@ const GameStart: React.FC = () => {
           />
           <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1 hidden group-hover:block bg-black bg-opacity-70 text-white text-xs rounded-md border border-gray-300 px-2 py-1 whitespace-nowrap z-50">
             ID: {s.id}
-            <br />
-            ({s.x}, {s.y})
+            <br />({s.x}, {s.y})
           </div>
         </div>
       ))}

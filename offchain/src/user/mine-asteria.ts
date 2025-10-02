@@ -21,12 +21,11 @@ import {
   spacetimeScriptHash,
 } from "../admin/deploy/hydra-deploy.js";
 
-const changeAddress = await hydraWallet.getChangeAddress();
-const collateral: UTxO = (await hydraWallet.getCollateral())[0]!;
-const utxos = await hydraWallet.getUtxos();
-
 async function mineAsteria(ship_tx_hash: string) {
   await hydraProvider.connect();
+  const changeAddress = await hydraWallet.getChangeAddress();
+  const collateral: UTxO = (await hydraWallet.getCollateral())[0]!;
+  const utxos = await hydraWallet.getUtxos();
   const ship_utxo = await hydraProvider.fetchUTxOs(ship_tx_hash, 1);
   const ship = ship_utxo[0];
   if (!ship?.output.plutusData) {
@@ -112,7 +111,10 @@ async function mineAsteria(ship_tx_hash: string) {
   const unsignedTx = await txBuilder
     .spendingPlutusScriptV3()
     .txIn(asteria.input.txHash, asteria.input.outputIndex)
-    .spendingReferenceTxInRedeemerValue(asteriaRedeemer, "JSON",{mem: 1000000, steps: 500000000})
+    .spendingReferenceTxInRedeemerValue(asteriaRedeemer, "JSON", {
+      mem: 1000000,
+      steps: 500000000,
+    })
     .txInScript(asteriaCbor)
     .txInInlineDatumPresent()
     .txOut(asteriaScriptAddress, asteria_address_assets)
@@ -120,22 +122,31 @@ async function mineAsteria(ship_tx_hash: string) {
 
     .spendingPlutusScriptV3()
     .txIn(ship.input.txHash, ship.input.outputIndex)
-    .spendingReferenceTxInRedeemerValue(shipRedemmer, "JSON",{mem: 1000000, steps: 500000000})
+    .spendingReferenceTxInRedeemerValue(shipRedemmer, "JSON", {
+      mem: 1000000,
+      steps: 500000000,
+    })
     .txInScript(spacetimeCbor)
     .txInInlineDatumPresent()
 
     .mintPlutusScriptV3()
     .mint("-1", spacetimeScriptHash!, ship_datum_shipTokenName)
     .mintingScript(spacetimeCbor)
-    .mintRedeemerValue(burnShipRedeemer, "JSON",{mem: 1000000, steps: 500000000})
+    .mintRedeemerValue(burnShipRedeemer, "JSON", {
+      mem: 1000000,
+      steps: 500000000,
+    })
 
     .mintPlutusScriptV3()
     .mint("-" + shipFuel!, pelletScripthash!, stringToHex("FUEL"))
     .mintingScript(pelletCbor)
-    .mintRedeemerValue(burnfuelRedeemer, "JSON",{mem: 1000000, steps: 500000000})
+    .mintRedeemerValue(burnfuelRedeemer, "JSON", {
+      mem: 1000000,
+      steps: 500000000,
+    })
 
     .txOut(hydraWallet.getAddresses().baseAddressBech32!, pilotAssets)
-    .txInCollateral("0264c2a00407c5c7ac003304714a1fd67e7b93a9c0f49da6b4caa4acae14236b", 3)
+    .txInCollateral(collateral.input.txHash, collateral.input.outputIndex)
     .selectUtxosFrom(utxos)
     .changeAddress(changeAddress)
     .setNetwork("preprod")

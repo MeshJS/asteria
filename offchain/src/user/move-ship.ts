@@ -19,16 +19,15 @@ import {
   spacetimeScriptHash,
 } from "../admin/deploy/hydra-deploy.js";
 
-const changeAddress = await hydraWallet.getChangeAddress();
-const collateral: UTxO = (await hydraWallet.getCollateral())[0]!;
-//const utxos = await hydraWallet.getUtxos();
-
 async function moveShip(
   delta_X: number,
   delta_Y: number,
   ship_tx_hash: string
 ) {
   await hydraProvider.connect();
+  const changeAddress = await hydraWallet.getChangeAddress();
+  const collateral: UTxO = (await hydraWallet.getCollateral())[0]!;
+  const utxos = await hydraWallet.getUtxos();
 
   const shipUtxo = await hydraProvider.fetchUTxOs(ship_tx_hash, 1);
   const ship = shipUtxo[0];
@@ -96,8 +95,6 @@ async function moveShip(
     submitter: hydraProvider,
     verbose: true,
   });
-  const utxos = await hydraProvider.fetchUTxOs("5a7bdf5f213bcfcb6369caec434d1506d5802330e0632f15c9acadacbbe0b971",1);
-
   const unsignedTx = await txbuilder
     .spendingPlutusScriptV3()
     .txIn(ship.input.txHash, ship.input.outputIndex)
@@ -113,7 +110,7 @@ async function moveShip(
     .txOut(hydraWallet.getAddresses().baseAddressBech32!, pilotTokenAsset)
     .txOut(spacetimeScriptAddress, assetsToSpacetime)
     .txOutInlineDatumValue(shipOutputDatum, "JSON")
-    .txInCollateral("5a7bdf5f213bcfcb6369caec434d1506d5802330e0632f15c9acadacbbe0b971",2)
+    .txInCollateral(collateral.input.txHash, collateral.input.outputIndex)
     .changeAddress(changeAddress)
     .selectUtxosFrom(utxos)
     .setNetwork("preprod")
